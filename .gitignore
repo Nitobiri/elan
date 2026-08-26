@@ -1,0 +1,24 @@
+# Système
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Éditeurs
+.vscode/
+.idea/
+
+# Dépendances (si on en ajoute plus tard)
+node_modules/
+
+# Fichiers temporaires
+*.log
+*.tmp
+
+# Docs de travail internes (IA) — local uniquement, hors dépôt public
+CLAUDE.md
+TODO.md
+dev/
+
+# Artefacts de test navigateur (local uniquement)
+.playwright-mcp/
+/*.png

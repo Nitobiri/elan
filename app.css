@@ -275,6 +275,7 @@ textarea.input{ min-height:70px; resize:vertical; }
 .ring-track{ stroke:var(--ring-track); fill:none; }
 .ring-fill{ fill:none; stroke-linecap:round; transition:stroke-dashoffset .9s cubic-bezier(.16,1,.3,1); }
 .goal-ring{ position:relative; flex:none; }
+.goal-ring-wrap{ display:flex; align-items:center; gap:16px; }
 .ring-center{ position:absolute; inset:0; display:grid; place-items:center; font-weight:700; font-size:15px; text-align:center; line-height:1.15; }
 .bar{ height:10px; border-radius:var(--r-full); background:var(--bg-3); overflow:hidden; display:flex; }
 .bar-seg{ height:100%; transform-origin:left; width:0; transition:width .9s cubic-bezier(.16,1,.3,1); border-radius:var(--r-full); }
@@ -311,12 +312,17 @@ textarea.input{ min-height:70px; resize:vertical; }
 /* ---------- Tableau de données ---------- */
 .table-scroll{ overflow:auto; -webkit-overflow-scrolling:touch; border-radius:var(--r-lg); border:1px solid var(--hairline); background:var(--bg-2); max-height:64dvh; }
 .dtable{ border-collapse:separate; border-spacing:0; font-size:12.5px; width:max-content; min-width:100%; }
-.dtable th{ color:var(--tx-3); font-weight:700; text-align:right; padding:8px 10px; position:sticky; top:0; background:var(--bg-3); z-index:2; white-space:nowrap; font-size:11px; text-transform:uppercase; letter-spacing:.03em; }
+.dtable th{ color:var(--tx-3); font-weight:700; text-align:right; padding:8px 10px; line-height:15px; position:sticky; top:0; background:var(--bg-3); z-index:2; white-space:nowrap; font-size:11px; text-transform:uppercase; letter-spacing:.03em; }
+/* Deux rangées d'en-tête collantes : la seconde se pose SOUS la première
+   (15 px de texte + 2 × 8 px de marge), sinon elles se superposent. */
+.dtable thead tr:nth-child(2) th{ top:31px; z-index:2; }
+.dtable thead tr:nth-child(2) th.col-date{ z-index:3; }
 .dtable td{ text-align:right; padding:8px 10px; border-top:1px solid var(--hairline); white-space:nowrap; font-variant-numeric:tabular-nums; }
 .dtable th.col-date,.dtable td.col-date{ text-align:left; position:sticky; left:0; background:var(--bg-2); z-index:1; box-shadow:1px 0 0 var(--hairline); font-weight:650; }
 .dtable th.col-date{ background:var(--bg-3); z-index:3; }
 .dtable tr:active td{ background:var(--bg-3); }
 .dtable tr.is-today td.col-date{ color:var(--acc-2); }
+.dtable td.col-note{ text-align:left; max-width:150px; overflow:hidden; text-overflow:ellipsis; }
 .dtable .miss{ color:var(--tx-3); opacity:.5; }
 .dtable .dlt{ font-size:11px; font-weight:650; }
 .dtable-group td{ background:var(--bg-1); color:var(--tx-3); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:6px 10px; text-align:left; }
@@ -436,6 +442,7 @@ textarea.input{ min-height:70px; resize:vertical; }
 .ax-zero{ stroke:var(--hairline-2); stroke-width:1; }
 .ax-lbl{ fill:var(--tx-3); font-size:10.5px; }
 .ax-unit{ fill:var(--tx-3); font-size:9.5px; letter-spacing:.04em; }
+.ax-goal{ fill:none; }
 .ax-goal-lbl{ fill:var(--m-goal,var(--gold)); font-size:10.5px; font-weight:600; }
 .ln-raw{ fill:none; stroke-linecap:round; stroke-linejoin:round; }
 .ln-bridge{ fill:none; stroke-dasharray:2 4; opacity:.38; stroke-linecap:round; }
@@ -481,7 +488,7 @@ textarea.input{ min-height:70px; resize:vertical; }
 .pw-cell.today{ box-shadow:0 0 0 1px var(--acc) inset; }
 .pw-ok{ color:var(--pos); background:color-mix(in srgb,var(--pos) 16%,var(--bg-2)); }
 .pw-skip{ color:var(--warn); background:color-mix(in srgb,var(--warn) 14%,var(--bg-2)); }
-.pw-miss{ color:var(--neg); background:color-mix(in srgb,var(--neg) 14%,var(--bg-2)); }
+.pw-miss{ color:var(--tx-2); background:var(--bg-3); }   /* une prise oubliée reste grise : jamais de rouge sur le corps */
 .pw-na{ opacity:.35; }
 .pill-alt{ display:flex; align-items:center; gap:8px; padding:9px 10px; border-radius:var(--r-md);
   background:var(--bg-3); margin-bottom:6px; font-size:13.5px; }

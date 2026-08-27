@@ -21,14 +21,14 @@ let saveTimer=null, STORAGE_FAIL=false;
 /* Collections de données. Ajouter ici = export/import/fusion suivent automatiquement. */
 const COLLECTIONS=[
   {key:'entries',      label:'Pesées',              dedupe:'date'},
-  {key:'sessions',     label:'Séances',             dedupe:'date|activityKey|durationMin'},
+  {key:'sessions',     label:'Séances',             dedupe:'id'},
   {key:'activities',   label:'Activités',           dedupe:'key'},
   {key:'plans',        label:'Entraînements prévus',dedupe:'id'},
   {key:'planOccs',     label:'Séances pointées',    dedupe:'key'},
   {key:'meds',         label:'Produits',            dedupe:'id'},
   {key:'medGroups',    label:'Groupes de prises',   dedupe:'id'},
   {key:'medSchedules', label:'Créneaux de prise',   dedupe:'id'},
-  {key:'medIntakes',   label:'Prises',              dedupe:'date|productId|scheduleId|at'},
+  {key:'medIntakes',   label:'Prises',              dedupe:'id'},
   {key:'motivations',  label:'Motivations',         dedupe:'id'},
   {key:'milestones',   label:'Paliers franchis',    dedupe:'code'}
 ];
@@ -54,6 +54,10 @@ function load(){
 function save(){ clearTimeout(saveTimer); saveTimer=setTimeout(saveNow,200); }
 function saveNow(){
   clearTimeout(saveTimer);
+  /* Si on n'a pas su RELIRE la base, on refuse d'écrire par-dessus : ce serait
+     transformer une lecture ratée en perte définitive. On rouvre l'écriture
+     seulement quand l'utilisateur choisit explicitement (import, restauration, effacement). */
+  if(LOAD_ERROR) return false;
   const ok=safeSet(KEY,JSON.stringify(state));
   if(ok&&STORAGE_FAIL){ STORAGE_FAIL=false; render(); }
   return ok;
@@ -110,21 +114,19 @@ function defaultDB(){
       metricUnitPref:{ fat:'pct', water:'pct', muscle:'pct', bone:'kg', protein:'pct', lean:'kg' },
       convertFallback:'lastKnown',        // conversion %↔kg quand le poids du jour manque
       convertFallbackDays:7,
-      boneAsked:false,                    // la question « kg ou % ? » a-t-elle été posée
       energy:{ palMode:'auto', pal:'leg' },
       sport:{ startedAt:null, weeklyGoalMin:150, weeklyGoalSessions:3, defaultDurationMin:45,
-              durationStepMin:15, kcalMode:'estimate' },
+              kcalMode:'estimate' },
       planning:{ floorDate:null, horizonDays:14, remindOnBoot:true, confirmWindowH:36 },
-      pillbox:{ floorDate:null, showOnHome:true, hideWhenDone:true, dayCutoffHour:4, lateAfterMin:60,
+      pillbox:{ floorDate:null, showOnHome:true, dayCutoffHour:4, lateAfterMin:60,
                 momentTimes:{matin:'08:00',midi:'12:30',gouter:'16:30',soir:'19:30',coucher:'22:30'},
                 mealTimes:{petitdej:'08:00',dejeuner:'12:30',gouter:'16:30',diner:'19:30'},
                 defaultWorkoutTime:'18:30', defaultSessionMin:60, countAsNeeded:false },
       accentTheme:'vert', density:'comfortable', numberPrivacy:false, hapticsOn:true,
-      celebrateOn:true, reduceMotion:null, firstScreen:'/', onboardingDone:false,
-      weighReminder:true
+      celebrateOn:true, reduceMotion:null, firstScreen:'/', onboardingDone:false
     },
     ui:{ charts:{}, table:{}, insightSeen:{}, skippedDays:{}, hints:{},
-         backupSnoozeUntil:null, pillCelebratedOn:null, lastActivityKey:null, lastPlanNudgeDate:null,
+         backupSnoozeUntil:null, pillCelebratedOn:null, lastActivityKey:null, 
          etaShown:null, sportPeriod:7, sportMonth:null, pillTab:'jour', pillDate:null, pillWeek:null,
          analyseTab:'progression' },
     meta:{ appVersion:'1.0', deviceId:null, deviceName:'', rev:0, updatedAt:null, createdAt:today,
@@ -146,25 +148,31 @@ function migrate(db){
   if(!db.meta.createdAt) db.meta.createdAt=isoToday();
   if(!db.settings.pillbox.floorDate) db.settings.pillbox.floorDate=isoToday();
   if(!db.settings.planning.floorDate) db.settings.planning.floorDate=isoToday();
-  /* Normalisation des pesées : une seule par date, triées, valeurs propres. */
-  const seen={};
-  db.entries=db.entries.filter(e=>{
-    if(!e||!validYMD(e.date)) return false;
-    if(seen[e.date]){                                   // doublon d'import : on garde le plus récent
-      const prev=seen[e.date];
-      if(String(e.updatedAt||'')>String(prev.updatedAt||'')) Object.assign(prev.m,e.m||{});
-      else Object.keys(e.m||{}).forEach(k=>{ if(prev.m[k]===undefined) prev.m[k]=e.m[k]; });
-      return false;
-    }
+  /* Normalisation des pesées : une seule par date, triées, valeurs propres.
+     Le nettoyage est fait AVANT toute fusion de doublon, sans quoi une valeur
+     invalide venue du doublon entrerait dans la base sans passer par le filtre. */
+  const cleanEntry=e=>{
     if(!e.id) e.id=uid();
     if(!e.m||typeof e.m!=='object') e.m={};
     if(!Array.isArray(e.tags)) e.tags=[];
     /* Une valeur absente = clé absente. Jamais null, jamais 0 par défaut. */
     Object.keys(e.m).forEach(k=>{
       const x=e.m[k];
-      if(!x||typeof x!=='object'||x.v==null||!isFinite(x.v)||!METRICS[k]||METRICS[k].kind==='derived'){ delete e.m[k]; return; }
+      if(!x||typeof x!=='object'||typeof x.v!=='number'||!isFinite(x.v)||!METRICS[k]||METRICS[k].kind==='derived'){ delete e.m[k]; return; }
       if(!x.u) x.u=defaultUnitOf(k);
     });
+    return e;
+  };
+  const seen={};
+  db.entries=db.entries.filter(e=>{
+    if(!e||typeof e!=='object'||!validYMD(e.date)) return false;
+    cleanEntry(e);
+    if(seen[e.date]){                                   // doublon d'import : le plus récent l'emporte
+      const prev=seen[e.date];
+      if(String(e.updatedAt||'')>String(prev.updatedAt||'')) Object.assign(prev.m,e.m);
+      else Object.keys(e.m).forEach(k=>{ if(prev.m[k]===undefined) prev.m[k]=e.m[k]; });
+      return false;
+    }
     seen[e.date]=e;
     return true;
   });
@@ -182,12 +190,16 @@ function migrate(db){
   db.schemaVersion=CURRENT_SCHEMA;
   return db;
 }
-/* Fusion récursive des valeurs par défaut (2 niveaux suffisent ici). */
+/* Fusion récursive des valeurs par défaut, à toute profondeur : les horaires du
+   pilulier sont imbriqués à trois niveaux et doivent être complétés eux aussi. */
 function deepDefaults(cur,def){
   const out=Object.assign({},def,cur||{});
   for(const k in def){
-    if(def[k]&&typeof def[k]==='object'&&!Array.isArray(def[k]))
-      out[k]=Object.assign({},def[k],(cur&&cur[k])||{});
+    const d=def[k];
+    if(d&&typeof d==='object'&&!Array.isArray(d)){
+      const c=(cur&&cur[k]&&typeof cur[k]==='object'&&!Array.isArray(cur[k]))?cur[k]:{};
+      out[k]=deepDefaults(c,d);
+    }
   }
   return out;
 }
@@ -804,13 +816,16 @@ function autoPal(sessPerWeek){
   return 'ext';
 }
 function sessionsPerWeek(days){
+  if(!state.settings.modules.sport) return 0;   // sans le module, Élan ne sait rien de tes séances
   days=days||28; const from=addDayYMD(isoToday(),-(days-1));
   const n=(state.sessions||[]).filter(s=>s.date>=from).length;
   return n/(days/7);
 }
 function currentPal(){
   const s=state.settings.energy;
-  return s.palMode==='auto'?autoPal(sessionsPerWeek(28)):(s.pal||'leg');
+  /* En automatique sans module Sport, on ne peut rien déduire : on retombe sur le réglage manuel. */
+  if(s.palMode==='auto'&&state.settings.modules.sport) return autoPal(sessionsPerWeek(28));
+  return s.pal||'leg';
 }
 function tdeeTheo(){
   const ref=refWeight().kg; if(ref==null) return null;
@@ -847,11 +862,13 @@ function energyBalance(){
 
 /* ---------- Calories mangées → poids, avec décalage ---------- */
 const XC_MAX_LAG=5, XC_MIN_N=30, XC_HINT_N=20, XC_SCAN_PENALTY=1.25;
+/* On teste les décalages à partir de 1 : la pesée du matin précède les repas de la
+   journée, un décalage 0 comparerait un effet à une cause postérieure. */
 function crossCorrIntakeWeight(maxLag){
   maxLag=maxLag||XC_MAX_LAG;
   const byT={}; state.entries.forEach(e=>{ byT[dayNum(e.date)]=e; });
   const res=[];
-  for(let lag=0;lag<=maxLag;lag++){
+  for(let lag=1;lag<=maxLag;lag++){
     const xs=[],ys=[];
     state.entries.forEach(e=>{
       const t=dayNum(e.date), prev=byT[t-1], src=byT[t-lag];
@@ -1065,7 +1082,7 @@ function effortLine(kg){ if(kg==null||kg<2) return null;
 function milestoneDefs(){
   return cached('msdefs',()=>{
     const w0=startWeight(), tg=targetWeight(), L=[];
-    const push=(code,kind,th,label,emoji,why)=>L.push({code:code,kind:kind,th:th,label:label,emoji:emoji,why:why||null});
+    const push=(code,kind,th,label,emoji,why,bmi)=>L.push({code:code,kind:kind,th:th,label:label,emoji:emoji,why:why||null,bmi:bmi||null});
     if(w0!=null){
       [1,2.5,5,7.5,10,15,20,25,30,40,50].forEach(k=>{
         if(tg==null||w0-k>=tg-0.001) push('lost'+String(k).replace('.','_'),'lost',k,MINUS+nf(k,1)+' kg au compteur','🔻'); });
@@ -1075,7 +1092,7 @@ function milestoneDefs(){
         push('under'+w,'under',w,'Passer sous '+w+' kg',(w%10===0)?'🎯':'✨',(w%10===0)?'Le premier chiffre change.':null);
       }
       [35,30,27,25].forEach(b=>{ const wt=weightForBmi(b);
-        if(wt!=null&&wt<w0) push('bmi'+b,'under',Math.round(wt*10)/10,'IMC sous '+b,'📉','soit '+fmtKg(wt)); });
+        if(wt!=null&&wt<w0) push('bmi'+b,'under',Math.round(wt*10)/10,'IMC sous '+b,'📉','soit '+fmtKg(wt),b); });
       if(metricOn('fat')) [1,2,3,5,8,10,15].forEach(k=>push('fat'+k,'fatlost',k,MINUS+nf(k,1)+' kg de masse grasse','🫀'));
     }
     [10,25,50,75,90].forEach(p=>push('pct'+p,'pct',p,p+' % du chemin','🧭'));
@@ -1122,11 +1139,12 @@ function checkMilestones(opt){
 }
 function milestoneCheer(d){
   const X=d.th;
+  if(d.bmi) return 'Ton IMC passe sous '+d.bmi+'. Ce n’est qu’un chiffre, mais c’est un chiffre que les médecins regardent — et il va dans le bon sens.';
   switch(d.kind){
     case 'lost': return nf(X,1)+' kg en moins depuis le début. C’est du poids que tu ne portes plus, toute la journée.';
     case 'under': return (X%10===0)
-      ? 'Le premier chiffre a changé. Tu es passé sous les '+X+' kg. Ce genre de cap, on s’en souvient.'
-      : 'Sous les '+X+' kg. Petit cap, vraie progression.';
+      ? 'Le premier chiffre a changé. Tu es passé sous les '+nf(X,0)+' kg. Ce genre de cap, on s’en souvient.'
+      : 'Sous les '+nf(X,X%1?1:0)+' kg. Petit cap, vraie progression.';
     case 'fatlost': return nf(X,1)+' kg de gras en moins. C’est ça qui compte vraiment, pas seulement l’aiguille de la balance.';
     case 'pct': return X+' % du chemin. '+(X>=50?'Tu es plus près de l’arrivée que du départ.':'Tu es bien lancé.');
     case 'streak': return X+' jours de pesées d’affilée. La régularité, c’est l’essentiel du travail.';
@@ -1134,7 +1152,6 @@ function milestoneCheer(d){
     case 'sessions': return X+' séances. Ton corps a compris le message.';
     case 'sporthours': return X+' heures d’entraînement cumulées. C’est du temps investi en toi, pas ailleurs.';
   }
-  if(d.code&&d.code.indexOf('bmi')===0) return 'Ton IMC passe sous '+d.th+'. Ce n’est qu’un chiffre, mais c’est un chiffre que les médecins regardent — et il va dans le bon sens.';
   return 'Un cap de plus. Continue.';
 }
 function celebrateMilestones(list){
@@ -1178,7 +1195,7 @@ function nextMilestone(){
   else if(k==='streak') txt='encore '+Math.ceil(best.rem)+' '+plural(Math.ceil(best.rem),'jour');
   else if(k==='count') txt='encore '+Math.ceil(best.rem)+' '+plural(Math.ceil(best.rem),'pesée');
   else txt='encore '+Math.ceil(best.rem);
-  return {def:best.def,remainText:txt,pct:pct};
+  return {def:best.def,rem:best.rem,remainText:txt,pct:pct};
 }
 
 /* ============================================================
@@ -1246,10 +1263,10 @@ function buildInsights(){
         +(scale?' Ta balance affiche '+nf(scale,0)+' : elle estime, elle ne mesure pas.':''),'/analyse');
     }
     const xc=crossCorrIntakeWeight();
-    if(xc.ok&&xc.solid&&xc.best.lag>=1)
+    if(xc.ok&&xc.solid&&xc.best.lag>=2)
       add('lag_calories',74,'🍽️','Chez toi, un gros apport se voit surtout '+xc.best.lag+' '+plural(xc.best.lag,'jour')+' après : +1 000 kcal ≈ '+sgnKg(xc.best.beta*1000)+', sur '+xc.best.n+' journées comparées.','/courbes');
-    else if(xc.ok&&xc.solid&&xc.best.lag===0)
-      add('lag_calories',74,'🍽️','Chez toi, ce que tu manges se voit dès le lendemain matin : +1 000 kcal ≈ '+sgnKg(xc.best.beta*1000)+'.','/courbes');
+    else if(xc.ok&&xc.solid&&xc.best.lag===1)
+      add('lag_calories',74,'🍽️','Chez toi, ce que tu manges se voit dès le lendemain matin : +1 000 kcal ≈ '+sgnKg(xc.best.beta*1000)+', sur '+xc.best.n+' journées comparées.','/courbes');
     const eb=energyBalance();
     if(eb.ok&&eb.ratio!=null){
       if(eb.ratio>=0.8&&eb.ratio<=1.25) add('deficit_ok',73,'✅','Ton déficit prévoyait '+fmtKg(-eb.expectedKgWeek)+'/semaine, tu perds '+fmtKg(-eb.actualKgWeek)+'/semaine : ça colle. Tes chiffres sont fiables.','/analyse','pos');
@@ -1294,8 +1311,11 @@ function pickInsights(list,max){
   });
   return out;
 }
+/* Ces insights ont déjà leur propre carte sur l'accueil : les répéter en « mot du jour »
+   ferait dire deux fois la même chose dans le même écran. Ils restent dans Analyse. */
+const INSIGHT_NOT_ON_HOME=['saisie_manquante','saisie_ok','perte_totale','eta','eta_pause','prochain_palier'];
 function insightOfTheDay(){
-  const l=buildInsights().filter(i=>i.prio<99);          // l'état de saisie a déjà sa carte dédiée
+  const l=buildInsights().filter(i=>i.prio<99&&INSIGHT_NOT_ON_HOME.indexOf(i.id)<0);
   if(!l.length) return null;
   const top=pickInsights(l,3);
   return top.length?top[dayIndex()%top.length]:null;
@@ -1783,16 +1803,16 @@ function routeHTML(r,seg){
   if(r==='/aide') return screenAide();
   return screenHome();
 }
-const TAB_GROUPS={
-  '/courbes':['/courbes','/analyse','/calories'],
-  '/tableau':['/tableau'],
-  '/':['/']
-};
+/* L'onglet allumé doit correspondre à l'endroit où ramène le bouton « Retour » :
+   Analyse et Calories s'ouvrent depuis Plus, c'est donc Plus qui s'allume. */
+const TAB_COURBES=['/courbes'];
+const TAB_PLUS=['/plus','/objectif','/paliers','/motivations','/sport','/planning','/activites',
+  '/pilulier','/sauvegarde','/reglages','/metriques','/aide','/analyse','/calories'];
 function tabOf(r){
-  if(r==='/'||r==='') return '/';
-  if(TAB_GROUPS['/courbes'].indexOf(r)>=0) return '/courbes';
+  if(TAB_COURBES.indexOf(r)>=0) return '/courbes';
   if(r==='/tableau') return '/tableau';
-  return '/plus';
+  if(TAB_PLUS.indexOf(r)>=0||r.indexOf('/produit/')===0) return '/plus';
+  return '/';                                  // accueil, et tout ce qu'on ne reconnaît pas
 }
 
 /* ============================================================
@@ -1803,18 +1823,45 @@ function tabOf(r){
    à partir du poids en cours de saisie. Le champ dérivé est
    grisé et en pointillés : on voit tout de suite lequel fait foi.
    ============================================================ */
-let WI=null;   // brouillon de saisie {date, m:{key:{v,u}}, note}
+let WI=null;        // brouillon de saisie {date, m:{key:{v,u}}, note}
+let WI_RETOUR=null; // date de la pesée quittée pour aller cocher une mesure (cf. go-metrics)
 
 function openWeighIn(date){
+  WI_RETOUR=null;
   date=validYMD(date)?date:isoToday();
   const e=entryFor(date);
   WI={date:date, m:{}, note:e?(e.note||''):'', existed:!!e};
   if(e) for(const k in e.m) WI.m[k]=Object.assign({},e.m[k]);
-  openSheet(wiTitle(),wiBody(),{onOpen:()=>{ wiRecompute(); wiFocus(); }});
+  openSheet(wiTitle(),wiBody(),{onOpen:()=>{ wiFill(); wiRecompute(); wiFocus(); },onClose:wiAutoSave});
 }
 function wiTitle(){ return 'Pesée — '+capit(fmtDayLabel(WI.date)); }
+/* Le brouillon survit à un aller-retour vers les réglages : on le rouvre tel quel. */
+function wiHasDraft(){ return !!(WI&&WI.m&&Object.keys(WI.m).length); }
+function resumeWeighIn(){
+  if(!wiHasDraft()) return openWeighIn(isoToday());
+  openSheet(wiTitle(),wiBody(),{onOpen:()=>{ wiFill(); wiRecompute(); },onClose:wiAutoSave});
+}
+/* Enregistrement silencieux à la fermeture : on ne repose aucune question ici
+   (les contrôles de plausibilité restent sur le bouton « Enregistrer »). */
+function wiAutoSave(){
+  if(!WI) return;
+  const note=(document.getElementById('wiNote')||{}).value;
+  const before=JSON.stringify((entryFor(WI.date)||{m:{}}).m);
+  const after=JSON.stringify(WI.m);
+  const noteBefore=((entryFor(WI.date)||{}).note)||'';
+  if(before===after&&String(note||'')===String(noteBefore)){ WI=null; return; }
+  const e=ensureEntry(WI.date);
+  e.m={}; for(const k in WI.m) if(WI.m[k]&&WI.m[k].v!=null) e.m[k]=Object.assign({},WI.m[k]);
+  e.note=(note||'').trim()||null;
+  e.updatedAt=new Date().toISOString();
+  const vide=entryIsEmpty(e);
+  if(vide) deleteEntry(WI.date); else delete (state.ui.skippedDays||{})[WI.date];
+  const d=WI.date; WI=null;
+  update();
+  if(!vide) toast('Pesée du '+fmtDateShort(d)+' enregistrée ✓');
+}
 function wiFocus(){
-  const el=document.getElementById('mi-weight-kg');
+  const el=document.getElementById('mi-weight-val');
   if(el&&!el.value) try{ el.focus(); }catch(e){}
 }
 function wiBody(){
@@ -1853,9 +1900,11 @@ function wiField(k){
       +'<div class="dual" id="dual-'+k+'-kg"><input class="input" id="mi-'+k+'-kg" data-mi="'+k+'" data-u="kg" inputmode="decimal" autocomplete="off" placeholder="—"><span class="dual-unit">kg</span></div>'
       +'</div>';
   } else {
+    /* Métrique simple : un seul champ. L'identifiant ne dépend PAS de l'unité
+       (certaines contiennent « / » ou sont vides). */
     const u=M.unit||'';
     h+='<div class="mfield-inputs single">'
-      +'<div class="dual" id="dual-'+k+'-'+(u||'v')+'"><input class="input" id="mi-'+k+'-'+(u||'v')+'" data-mi="'+k+'" data-u="'+esc(u)+'" inputmode="decimal" autocomplete="off" placeholder="—"><span class="dual-unit">'+esc(u)+'</span></div>'
+      +'<div class="dual" id="dual-'+k+'-val"><input class="input" id="mi-'+k+'-val" data-mi="'+k+'" data-u="'+esc(u)+'" inputmode="decimal" autocomplete="off" placeholder="—"><span class="dual-unit">'+esc(u)+'</span></div>'
       +'</div>';
   }
   h+='<div class="mfield-foot" id="mfoot-'+k+'"></div></div>';
@@ -1869,24 +1918,33 @@ function wiPrevEntry(){
 }
 /* Poids actuellement dans le FORMULAIRE (pas dans le store : il est peut-être en cours de frappe). */
 function wiWeightKg(){
-  const el=document.getElementById('mi-weight-kg');
+  const el=document.getElementById('mi-weight-val');
   if(el){ const v=parseNum(el.value); if(v!=null) return v; }
   const raw=WI.m.weight; return raw&&raw.v!=null?raw.v:null;
 }
-/* Recalcule tous les champs dérivés et les libellés d'aide. Appelée à chaque frappe. */
+/* Remplit les champs à partir du brouillon. Appelée UNE fois à l'ouverture (ou après
+   un changement de date), jamais pendant la frappe : sinon vider un champ le
+   re-remplirait aussitôt. */
+function wiFill(){
+  activeMetrics().forEach(k=>{
+    const M=METRICS[k], src=WI.m[k];
+    if(!src||src.v==null) return;
+    const el=document.getElementById(M.kind==='comp'?('mi-'+k+'-'+src.u):('mi-'+k+'-val'));
+    if(el) el.value=nf(src.v,metricDec(k,M.kind==='comp'?src.u:null));
+  });
+}
+/* Recalcule les champs DÉRIVÉS, les libellés d'aide et les écarts. Appelée à chaque frappe. */
 function wiRecompute(changedKey){
   const W=wiWeightKg(), prev=wiPrevEntry();
   activeMetrics().forEach(k=>{
     const M=METRICS[k], src=WI.m[k];
     if(M.kind==='comp'){
       const other=(src&&src.u==='kg')?'pct':'kg';
-      const elSrc=document.getElementById('mi-'+k+'-'+(src?src.u:M.defUnit));
       const elOther=document.getElementById('mi-'+k+'-'+other);
       const dSrc=document.getElementById('dual-'+k+'-'+(src?src.u:M.defUnit));
       const dOther=document.getElementById('dual-'+k+'-'+other);
       if(dSrc){ dSrc.classList.toggle('is-source',!!src); dSrc.classList.remove('is-derived'); }
       if(dOther){ dOther.classList.toggle('is-derived',!!src); dOther.classList.remove('is-source'); }
-      if(elSrc&&src&&document.activeElement!==elSrc&&elSrc.value===''){ elSrc.value=nf(src.v,metricDec(k,src.u)); }
       if(elOther){
         if(!src){ if(document.activeElement!==elOther) elOther.value=''; }
         else{
@@ -1933,7 +1991,7 @@ function wiSetDate(d){
   if(e) for(const k in e.m) WI.m[k]=Object.assign({},e.m[k]);
   setSheetTitle(wiTitle());
   refreshSheet(wiBody());
-  wiRecompute();
+  wiFill(); wiRecompute();
 }
 function saveWeighIn(){
   const note=(document.getElementById('wiNote')||{}).value;
@@ -1941,6 +1999,7 @@ function saveWeighIn(){
   const M=METRICS.weight;
   if(w!=null&&(w<M.min||w>M.max)){ toast('Un poids de '+nf(w,1)+' kg ? Vérifie le chiffre.'); return; }
   const doSave=()=>{
+    SHEET_CLOSE=null;                      // l'enregistrement explicite prend la main
     const e=ensureEntry(WI.date);
     e.m={};
     for(const k in WI.m) if(WI.m[k]&&WI.m[k].v!=null) e.m[k]=Object.assign({},WI.m[k]);
@@ -1954,17 +2013,31 @@ function saveWeighIn(){
     toast(WI.existed?'Pesée mise à jour ✓':'Pesée enregistrée ✓');
     setTimeout(()=>checkMilestones({celebrate:true}),450);
   };
-  if(w!=null){
-    const o=isOutlierInput(w,WI.date);
-    if(o.suspect){ confirmSheet('Vérification',o.text,doSave,false,'Oui, c’est bien ça'); return; }
+  /* Contrôle doux de plausibilité sur TOUTES les métriques : on demande, on ne bloque jamais. */
+  const douteux=[];
+  for(const k in WI.m){
+    const x=WI.m[k], M=METRICS[k]; if(!x||x.v==null||!M) continue;
+    const rg=metricRange(k,x.u);
+    if(rg.min!=null&&rg.max!=null&&(x.v<rg.min||x.v>rg.max))
+      douteux.push(M.label+' : '+fmtMetric(x.v,k,x.u));
   }
+  const o=(w!=null)?isOutlierInput(w,WI.date):{suspect:false};
+  if(douteux.length){
+    confirmSheet('Vérification',
+      (douteux.length===1?'Cette valeur sort des ordres de grandeur habituels — '
+                         :'Ces valeurs sortent des ordres de grandeur habituels — ')
+      +douteux.join(' · ')+'. C’est peut-être une faute de frappe. Tu confirmes ?',
+      doSave,false,'Oui, c’est bien ça',wiAutoSave);
+    return;
+  }
+  if(o.suspect){ confirmSheet('Vérification',o.text,doSave,false,'Oui, c’est bien ça',wiAutoSave); return; }
   doSave();
 }
 function deleteWeighIn(){
-  const d=WI.date;
+  const d=WI.date; SHEET_CLOSE=null; WI=null;
   confirmSheet('Supprimer la pesée','La pesée du '+fmtDateLong(d)+' sera supprimée. Continuer ?',()=>{
     const e=deleteEntry(d); if(!e) return;
-    closeSheet(); update();
+    update();
     toast('Pesée supprimée',()=>{ state.entries.push(e); state.entries.sort((a,b)=>a.date<b.date?-1:1); update(); });
   },true,'Supprimer');
 }
@@ -2019,7 +2092,7 @@ function statusTodo(){
   const s=streakInfo(), hr=new Date().getHours();
   let h='<div class="card card--action"><div class="today-top">'
    +'<div class="today-ic">⚖️</div>'
-   +'<div class="row-main"><div class="row-title">'+esc(hr<12?'Pas encore pesé ce matin':'Pas de pesée aujourd’hui')+'</div>'
+   +'<div class="row-main"><div class="row-title" style="white-space:normal">'+esc(hr<12?'Pas encore pesé ce matin':'Pas de pesée aujourd’hui')+'</div>'
    +'<div class="small muted">'+esc(weighNudge())+'</div></div></div>'
    +'<button class="btn btn--primary btn--block btn--lg" data-act="weigh-in" style="margin-top:12px">'
    +(hr<14?'⚖️ Peser ce matin':'⚖️ Noter ma pesée')+'</button>';
@@ -2035,7 +2108,7 @@ function statusDone(){
   const t=e.updatedAt?new Date(e.updatedAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):null;
   let h='<div class="card"><div class="today-top">'
    +'<div class="today-ic is-done">✓</div>'
-   +'<div class="row-main"><div class="row-title">'+esc(DONE_TITLES[dayIndex()%DONE_TITLES.length])+'</div>'
+   +'<div class="row-main"><div class="row-title" style="white-space:normal">'+esc(DONE_TITLES[dayIndex()%DONE_TITLES.length])+'</div>'
    +'<div class="small muted">'+fmtKg(mv(e,'weight'))+(t?' · noté à '+t:'')+'</div></div>'
    +'<button class="btn-add" data-act="weigh-in">Modifier</button></div>';
   if(isOutlier(e)) h+='<div class="small muted" style="margin-top:10px">Ce chiffre est un peu à part par rapport à ta tendance — sel, sport de la veille, mauvais sommeil : c’est normal. La tendance, elle, ne bouge presque pas.</div>';
@@ -2099,7 +2172,7 @@ function homeHero(){
     h+='<div class="stats" style="margin-top:12px">'
      +statCard('Depuis hier',d1==null?'—':sgnKg(d1),(d1!=null&&Math.abs(d1)>0.6)?'surtout de l’eau':'','delta--flat')
      +statCard('7 jours',d7==null?'—':sgnKg(d7),d7==null?'encore un peu de patience':'',deltaClass(d7,-1))
-     +statCard('Depuis le début',dAll==null?'—':sgnKg(dAll),(dAll!=null&&dAll<0)?(equivShort(-dAll)||''):'',deltaClass(dAll,-1))
+     +statCard('Au total',dAll==null?'—':sgnKg(dAll),(dAll!=null&&dAll<0)?(equivShort(-dAll)||''):'',deltaClass(dAll,-1))
      +'</div>';
   }
   if(stale>=3) h+='<div class="small muted" style="margin-top:10px">Dernière pesée il y a '+stale+' jours. Content de te revoir 👋</div>';
@@ -2196,8 +2269,12 @@ function homeMeds(){
   const nm=nowMin();
   const due=box.slots.filter(s=>!s.extra&&(s.status==='pending'||(s.status==='snoozed'&&s.snoozeMin!=null&&nm>=s.snoozeMin)));
   const na=box.notApplicable;
+  const reportees=box.slots.filter(s=>!s.extra&&s.status==='snoozed').length;
   if(!due.length&&!na.length){
     if(!box.counts.expected) return '';
+    if(reportees) return '<div class="card tap" data-act="go" data-route="/pilulier" style="display:flex;align-items:center;gap:12px;padding:12px 14px">'
+      +'<div class="row-ic">⏳</div><div class="row-main"><div class="row-title">'+reportees+' '+plural(reportees,'prise')+' '+plural(reportees,'reportée')+'</div>'
+      +'<div class="row-sub">on t’en reparle plus tard</div></div>'+arrowHTML()+'</div>';
     return '<div class="card tap" data-act="go" data-route="/pilulier" style="display:flex;align-items:center;gap:12px;padding:12px 14px">'
       +'<div class="row-ic" style="background:color-mix(in srgb,var(--pos) 20%,var(--bg-3))">✅</div>'
       +'<div class="row-main"><div class="row-title">Pilulier complet</div>'
@@ -2213,7 +2290,9 @@ function homeMeds(){
   h+='</div>';
   if(rest>0) h+='<button class="btn btn--ghost btn--block" data-act="go" data-route="/pilulier" style="margin-top:4px">Voir les '+rest+' autres</button>';
   if(na.length){
-    h+='<div class="divider"></div><div class="small muted" style="margin-bottom:8px">Pas d’entraînement prévu aujourd’hui — ces prises ne te sont pas rappelées, mais tu peux les cocher si tu les as prises quand même.</div>'
+    h+='<div class="divider"></div><div class="small muted" style="margin-bottom:8px">'+(state.settings.modules.sport
+      ?'Pas d’entraînement prévu aujourd’hui — ces prises ne te sont pas rappelées, mais tu peux les cocher si tu les as prises quand même.'
+      :'Le module Sport est désactivé — ces prises ne te sont pas rappelées, mais tu peux les cocher si tu les as prises quand même.')+'</div>'
       +'<div class="chip-wrap">'
       +na.map(s=>'<button class="chip chip--act" data-act="pill-anyway" data-key="'+esc(s.key)+'">'+esc(s.product.name)+' · pris</button>').join('')
       +'</div>';
@@ -2236,7 +2315,7 @@ function homeGoal(){
    +'<div class="bar" style="margin-top:9px"><span class="bar-seg" data-bar="'+(pct||0).toFixed(3)+'" style="background:var(--grad-brand)"></span></div>'
    +'</div></div>';
   h+='<div class="divider"></div><div class="stats">'
-   +statCard('Rythme',rate!=null?((rate>0?'+':MINUS)+nf(Math.abs(rate),2)):'—',rate!=null?('kg/sem · '+rateWord(rate)):'trop tôt',deltaClass(rate,-1))
+   +statCard('Rythme /sem.',rate!=null?((rate>0?'+':MINUS)+nf(Math.abs(rate),2)+NBSP+'kg'):'—',rate!=null?rateWord(rate):'trop tôt',deltaClass(rate,-1))
    +statCard('Il reste',fmtKg(left),'','')
    +statCard('Objectif',ed==null?'—':fmtDateShort(etaDate()),ed==null?'':'dans '+humanDuration(ed),'')
    +'</div>';
@@ -2272,7 +2351,9 @@ function goalReached(){
 /* ---------- Bloc E : paliers ---------- */
 function homeMilestone(){
   if(weighIns().length<2) return '';
-  const done=(state.milestones||[]).slice().sort((a,b)=>a.reachedAt<b.reachedAt?1:-1);
+  /* On ne compte que les paliers encore visibles : un module coupé retire ses paliers
+     de la liste, le compteur doit suivre sinon il annonce des paliers introuvables. */
+  const done=(state.milestones||[]).filter(m=>defByCode(m.code)).sort((a,b)=>a.reachedAt<b.reachedAt?1:-1);
   const next=nextMilestone();
   if(!next&&!done.length) return '';
   let h='<div class="card">';
@@ -2300,7 +2381,7 @@ function homeStats(){
   const fat=totalDelta(PICK_FATK), fatp=totalDelta(PICK_FATP), mus=totalDelta(PICK_MUSK);
   const b=(t!=null)?bmiOf(t):null, w0=startWeight(), b0=(w0!=null)?bmiOf(w0):null;
   const cells=[];
-  if(d!=null) cells.push(statCard('Depuis le début',d+' j','',humanDuration(d)));
+  if(d!=null) cells.push(statCard('Depuis le début',d+' j',humanDuration(d),''));
   if(lost!=null) cells.push(statCard('Poids perdu',sgnKg(-lost),equivShort(lost)||'',deltaClass(-lost,-1)));
   if(fat&&metricOn('fat')) cells.push(statCard('Masse grasse',sgnKg(fat.delta),fatp?sgnPt(fatp.delta):staleSub(fat.lastDate),deltaClass(fat.delta,-1)));
   if(mus&&metricOn('muscle')) cells.push(statCard('Muscle',sgnKg(mus.delta),staleSub(mus.lastDate)||'',deltaClass(mus.delta,1)));
@@ -2367,7 +2448,7 @@ function homeBackup(){
    +'<div class="row-title">💾 Une sauvegarde s’impose</div>'
    +'<div class="small muted" style="margin:6px 0 10px">'
    +(state.meta.lastBackupAt||state.meta.lastCloudAt?'Plus d’une semaine sans copie de sécurité.':'Tes chiffres n’existent que sur ce téléphone.')
-   +' '+weighIns().length+' pesées : ce serait dommage.</div>'
+   +' '+weighIns().length+' '+plural(weighIns().length,'pesée')+' : ce serait dommage.</div>'
    +'<button class="btn btn--primary btn--block" data-act="bk-share">📤 Sauvegarder maintenant</button>'
    +'<button class="btn btn--ghost btn--block" data-act="bk-snooze" style="margin-top:8px">Plus tard</button></div>';
 }
@@ -2456,7 +2537,7 @@ function screenCourbes(){
   const tabs=[['compo','Composition']];
   if(state.settings.modules.sport) tabs.push(['sport','Sport']);
   if(state.settings.modules.kcalIn) tabs.push(['calories','Calories']);
-  if(tabs.length>1&&!tabs.some(t=>t[0]===c.view)) c.view='compo';
+  if(!tabs.some(t=>t[0]===c.view)) c.view='compo';   // une vue dont le module est coupé n'existe plus
   let h=head('Courbes');
   if(tabs.length>1) h+='<div class="subtabs">'+tabs.map(t=>
     '<button class="subtab'+(c.view===t[0]?' is-active':'')+'" data-act="ch-view" data-v="'+t[0]+'">'+esc(t[1])+'</button>').join('')+'</div>';
@@ -2468,8 +2549,9 @@ function screenCourbes(){
 }
 function courbesCompo(){
   const c=CH(), r=chRange();
-  const avail=METRIC_ORDER.filter(k=>metricOn(k)&&METRICS[k].kind!=='derived').concat(['bmi','lean']);
-  const shown=avail.filter(k=>k==='weight'||k==='bmi'||metricOn(k)||k==='lean');
+  /* La masse maigre se déduit de la masse grasse : sans elle, elle n'a plus de sens. */
+  const shown=METRIC_ORDER.filter(k=>metricOn(k)&&METRICS[k].kind!=='derived').concat(['bmi'])
+    .concat(metricOn('fat')?['lean']:[]);
   if(shown.indexOf(c.metric)<0) c.metric='weight';
   const m=c.metric, M=METRICS[m], unit=chUnit();
   let h='<div class="chip-row" style="margin-top:10px">'+shown.map(k=>
@@ -2538,6 +2620,7 @@ function chReadoutDefault(pts,m,unit){
   return h;
 }
 function courbesCompoDonut(){
+  if(!metricOn('fat')) return '';
   const e=lastWeighIn(); if(!e) return '';
   const w=mv(e,'weight'), f=metricValue(e,'fat','kg');
   if(w==null||!f) return '';
@@ -2562,7 +2645,7 @@ function courbesHeatPesees(r){
   return '<div class="chart-card"><div class="chart-title">Jours de pesée</div>'
     +chartSlot(w=>calendarHeatmap(days,{cell:12,gap:2,color:'var(--m-poids)',buckets:[1,1,1],
         from:addDayYMD(isoToday(),-181),to:isoToday(),onDay:'hm-weigh'}),{h:130,hscroll:true})
-    +'<div class="small muted center" style="margin-top:6px">'+weighIns().length+' pesées · '
+    +'<div class="small muted center" style="margin-top:6px">'+weighIns().length+' '+plural(weighIns().length,'pesée')+' · '
     +(adherencePct()!=null?adherencePct()+' % des jours depuis le début':'')+'</div></div>';
 }
 function courbesSport(){
@@ -2627,7 +2710,7 @@ function courbesCalories(){
   const kin=[]; state.entries.forEach(e=>{ if(e.date<r.from||e.date>r.to) return;
     const v=mv(e,'kcalIn'); if(v!=null) kin.push({date:e.date,v:v,color:'#F0A93B'}); });
   const dw=dailyDeltaWeight(r.from,r.to);
-  const lag=c.lag|0;
+  const lag=Math.min(XC_MAX_LAG,Math.max(1,c.lag|0));   // la pesée du matin précède les repas du jour
   const shifted=kin.map(p=>({date:addDayYMD(p.date,lag),v:p.v,color:'#F0A93B'})).filter(p=>p.date<=r.to);
   let h='<div class="chart-card"><div class="chart-title">Calories mangées (décalées de +'+lag+' j) et variation de poids</div>'
    +chartSlot(w=>barChart(shifted,{w:w,h:CH_H,from:r.from,to:r.to,bucket:'day',dec:0,
@@ -2636,14 +2719,15 @@ function courbesCalories(){
    +'<span class="legend-item" style="color:#F0A93B"><i></i>kcal mangées</span>'
    +'<span class="legend-item" style="color:var(--m-poids)"><i></i>variation de poids (axe droit)</span>'
    +'</div></div>';
-  h+='<div class="section-title">Décalage</div>'
-   +segHTML([['0','+0 j'],['1','+1 j'],['2','+2 j'],['3','+3 j'],['4','+4 j']],String(lag),'ch-lag','');
+  h+='<div class="section-title">Décaler les barres</div>'
+   +segHTML([['1','+1 j'],['2','+2 j'],['3','+3 j'],['4','+4 j'],['5','+5 j']],String(lag),'ch-lag','')
+   +'<div class="hint" style="margin:6px 4px 0">Décale les calories vers la droite pour les aligner sur le moment où le poids réagit.</div>';
   const xc=crossCorrIntakeWeight();
   h+='<div class="insight'+(xc.ok&&xc.solid?'':' insight--neutral')+'" style="margin-top:12px"><div class="insight-ic">🍽️</div><div class="insight-txt">';
   if(!xc.ok) h+='Pas encore assez de journées avec <strong>calories ET pesée</strong> pour chercher ce lien. Il en faut une trentaine, tu en as '+(xc.n||0)+'.';
-  else if(xc.solid) h+='Chez toi, un gros apport se voit surtout <strong>'+xc.best.lag+' '+plural(xc.best.lag,'jour')+' après</strong> : +1 000 kcal ≈ '+sgnKg(xc.best.beta*1000)+', sur '+xc.best.n+' journées comparées.'
+  else if(xc.solid) h+='Chez toi, un gros apport se voit surtout <strong>'+(xc.best.lag===1?'dès le lendemain matin':xc.best.lag+' jours après')+'</strong> : +1 000 kcal ≈ '+sgnKg(xc.best.beta*1000)+', sur '+xc.best.n+' journées comparées.'
     +' <button class="btn-add" data-act="ch-lag" data-val="'+xc.best.lag+'">Utiliser ce décalage</button>';
-  else h+='Piste : le lien apparaît plutôt <strong>'+xc.best.lag+' '+plural(xc.best.lag,'jour')+' après</strong>, mais avec '+xc.best.n+' journées c’est encore fragile. Continue à noter tes calories, je reprendrai ce calcul.';
+  else h+='Piste : le lien apparaît plutôt <strong>'+(xc.best.lag===1?'dès le lendemain':xc.best.lag+' jours après')+'</strong>, mais avec '+xc.best.n+' journées c’est encore fragile. Continue à noter tes calories, je reprendrai ce calcul.';
   h+='</div></div>';
   h+='<div class="hint" style="margin:8px 4px 0">Un lien statistique n’est pas une preuve de cause. Le sel, l’eau et les fibres décalent la balance sans changer le gras.</div>';
   return h;
@@ -2716,6 +2800,7 @@ function screenTableau(){
   else if(t.sort==='w_asc') rows=rows.slice().sort((a,b)=>(mv(a.e,'weight')||1e9)-(mv(b.e,'weight')||1e9));
   const shown=rows.slice(0,t.limit);
   const cols=tblCols();
+  if(t.del) cols.push({k:'del',grp:'',sub:''});   // colonne 🗑, jamais dans l'export CSV
 
   let h=head('Tableau','<button class="btn-add" data-act="weigh-in">+ Pesée</button>');
   h+='<div class="filterbar">'
@@ -2728,15 +2813,18 @@ function screenTableau(){
    +'</div>'
    +'<div class="filterbar">'
    +'<button class="chip'+(t.showGaps?' is-active':'')+'" data-act="tbl-toggle" data-k="showGaps">Jours manquants</button>'
-   +'<button class="chip'+(t.del?' is-active':'')+'" data-act="tbl-toggle" data-k="del">Supprimer…</button>'
+   +'<button class="chip'+(t.del?' is-active':'')+'" data-act="tbl-toggle" data-k="del">'+(t.del?'✕ Terminer':'🗑 Supprimer…')+'</button>'
    +'<button class="chip" data-act="tbl-csv">⤓ Export CSV</button>'
    +'<button class="chip" data-act="go-metrics">⚙️ Colonnes</button>'
    +'</div>';
 
-  const span=diffDays(r.from,r.to)+1;
-  const missing=Math.max(0,Math.min(span,span-total));
+  /* La régularité ne se calcule que sur les jours réellement écoulés depuis la première
+     pesée : sinon une période de 90 jours affiche « 1 % » le jour de l'installation. */
+  const from0=maxYMD(r.from,startDate()||r.from);
+  const span=Math.max(1,diffDays(from0,minYMD(r.to,isoToday()))+1);
+  const missing=Math.max(0,span-total);
   if(total>0) h+='<div class="small muted" style="margin:0 4px 10px">'+total+' '+plural(total,'pesée')
-    +(missing>0?' · '+missing+' '+plural(missing,'jour')+' sans pesée sur '+span+' — '+Math.round(total/span*100)+' % de régularité':'')+'</div>';
+    +(missing>0?' · '+missing+' '+plural(missing,'jour')+' sans pesée sur '+span+' — '+Math.round(Math.min(100,total/span*100))+' % de régularité':'')+'</div>';
 
   /* Deux rangées d'en-tête : les groupes (avec colspan sur les métriques doubles), puis les unités. */
   let head1='';
@@ -2774,8 +2862,9 @@ function screenTableau(){
 function tblCell(c,rw){
   const e=rw.e;
   const na='<span class="miss" aria-label="non saisi">—</span>';
+  if(c.k==='del') return '<td><button class="pill-btn pill-btn--no" data-act="tbl-del" data-date="'+e.date+'" aria-label="Supprimer la pesée du '+esc(fmtDateLong(e.date))+'">🗑</button></td>';
   if(c.k==='date') return '<td class="col-date">'+esc(fmtTblDate(e.date))+'</td>';
-  if(c.k==='note') return '<td class="col-note" style="text-align:left;max-width:150px;overflow:hidden;text-overflow:ellipsis">'+esc(e.note||'')+'</td>';
+  if(c.k==='note') return '<td class="col-note">'+esc(e.note||'')+'</td>';
   if(c.k==='dweight'){
     if(rw.dW==null) return '<td>'+na+'</td>';
     return '<td><span class="dlt '+signCls(rw.dW,'down')+'">'+(rw.dW>0?'+':MINUS)+nf(Math.abs(rw.dW),1)+'</span>'
@@ -3137,10 +3226,13 @@ function sportCalendar(){
   }
   const minutes=(state.sessions||[]).filter(s=>monthKey(s.date)===mk).reduce((a,x)=>a+(x.durationMin||0),0);
   const days=Object.keys(byDay).length;
+  const moisCourant=mk===monthKey(isoToday());
   return '<div class="card" style="margin-top:12px"><div class="cal-head">'
    +'<button class="chip" data-act="sport-month" data-d="-1">‹</button>'
-   +'<b style="text-transform:capitalize">'+esc(fmtMonth(mk))+'</b>'
-   +'<button class="chip" data-act="sport-month" data-d="1">›</button></div>'
+   +(moisCourant?'<b style="text-transform:capitalize">'+esc(fmtMonth(mk))+'</b>'
+     :'<button class="chip" data-act="sport-month-today" style="text-transform:capitalize">'+esc(fmtMonth(mk))+' · revenir</button>')
+   +(mk>=monthKey(isoToday())?'<span class="chip" style="opacity:.35">›</span>':'<button class="chip" data-act="sport-month" data-d="1">›</button>')
+   +'</div>'
    +'<div class="cal-grid">'+['L','M','M','J','V','S','D'].map(d=>'<div class="cal-dow">'+d+'</div>').join('')+cells+'</div>'
    +'<div class="small muted center" style="margin-top:8px">'+days+' '+plural(days,'jour')+' '+plural(days,'entraîné')+' · '+fmtMin(minutes)+' ce mois-ci</div></div>';
 }
@@ -3173,7 +3265,11 @@ function weeklyGoalSheet(){
 
 /* ---------- Écran : Planning ---------- */
 function screenPlanning(){
-  if(!state.settings.modules.sport) { nav('/plus'); return ''; }
+  if(!state.settings.modules.sport)
+    return backHead('Planning','/plus')
+      +'<div class="card"><div class="row-title">📅 Prévisions d’entraînement</div>'
+      +'<div class="small muted" style="margin:6px 0 12px">Les prévisions font partie du module Sport. Active-le pour prévoir tes créneaux — ceux que tu as déjà enregistrés sont conservés.</div>'
+      +'<button class="btn btn--primary btn--block" data-act="mod-on" data-k="sport">Activer le sport</button></div>';
   let h=backHead('Planning','/sport','<button class="btn-add" data-act="new-plan">+ Créneau</button>');
   if(!state.settings.modules.planning){
     h+='<div class="card"><div class="row-title">📅 Prévoir tes entraînements</div>'
@@ -3195,8 +3291,11 @@ function screenPlanning(){
   h+='<div class="section-title">À venir</div>';
   if(!next.length) h+='<div class="card"><div class="small muted">Rien de prévu dans les deux prochaines semaines.</div></div>';
   else{
+    /* On ne liste que les prochaines séances : avec un créneau quotidien, afficher
+       les quatorze occurrences n'apprend rien de plus et noie l'écran. */
+    const SHOWN=5, shown=next.slice(0,SHOWN), rest=next.length-shown.length;
     let curDate=null; h+='<div class="list">';
-    next.forEach(o=>{
+    shown.forEach(o=>{
       if(o.date!==curDate){ curDate=o.date; h+='<div class="day-head">'+esc(capit(fmtDayLabel(o.date)))+'</div>'; }
       h+='<div class="row" data-act="edit-plan" data-id="'+o.planId+'"><div class="row-ic">'+o.emoji+'</div>'
        +'<div class="row-main"><div class="row-title">'+esc(o.label)+'</div>'
@@ -3205,6 +3304,8 @@ function screenPlanning(){
        +(o.place?'<span class="pill">'+esc(o.place)+'</span>':'')+'</div></div>'+arrowHTML()+'</div>';
     });
     h+='</div>';
+    if(rest>0) h+='<div class="small muted center" style="margin:-2px 4px 0">et '+rest+' '+plural(rest,'autre')
+      +' dans les 14 prochains jours</div>';
   }
   h+='<div class="section-title">Mes créneaux</div>';
   const plans=(state.plans||[]).slice().sort((a,b)=>String(a.time).localeCompare(String(b.time)));
@@ -3305,6 +3406,11 @@ function deletePlan(id){
 
 /* ---------- Écran : Activités ---------- */
 function screenActivities(){
+  if(!state.settings.modules.sport)
+    return backHead('Activités','/plus')
+      +'<div class="card"><div class="row-title">🏃 Activités</div>'
+      +'<div class="small muted" style="margin:6px 0 12px">Le catalogue d’activités fait partie du module Sport.</div>'
+      +'<button class="btn btn--primary btn--block" data-act="mod-on" data-k="sport">Activer le sport</button></div>';
   let h=backHead('Activités','/sport','<button class="btn-add" data-act="new-activity">+ Ajouter</button>');
   const on=activeActivities(), off=(state.activities||[]).filter(a=>a.archived);
   h+='<div class="section-title">Actives</div><div class="chip-wrap">'
@@ -3588,7 +3694,11 @@ function pillSlotByKey(key){
   const box=PILL_BOX||pillboxForDate(pillCtxDate());
   return box.slots.concat(box.onDemand,box.notApplicable).find(s=>s.key===key)||null;
 }
-function pillCtxDate(){ return state.ui.pillDate||pillToday(); }
+function pillCtxDate(){
+  /* Une date choisie hier ne doit pas coller au lendemain : on revient à aujourd'hui. */
+  if(state.ui.pillDate&&state.ui.pillDateSetOn!==pillToday()) state.ui.pillDate=null;
+  return state.ui.pillDate||pillToday();
+}
 function pillPendingCount(){
   if(!state.settings.modules.pillbox) return 0;
   const b=pillboxForDate(pillToday());
@@ -3634,22 +3744,27 @@ function pillUndo(id){
   const i=(state.medIntakes||[]).findIndex(x=>x.id===id); if(i<0) return;
   state.medIntakes.splice(i,1); update();
 }
+/* Compte d'un jour, en ne retenant AUJOURD'HUI que les prises dont l'heure est passée :
+   afficher « 0 % » à huit heures du matin serait faux, et décourageant pour rien. */
+function pillDayCounts(date){
+  const box=pillboxForDate(date);
+  if(date>pillToday()) return {expected:0,taken:0,skipped:0};      // le futur ne se juge pas
+  if(date!==pillToday()) return {expected:box.counts.expected,taken:box.counts.taken,skipped:box.counts.skipped};
+  const nm=nowMin(), gr=state.settings.pillbox.lateAfterMin||60;
+  const passed=box.slots.filter(x=>!x.extra&&(x.estMin!==ANY_MIN?nm>x.estMin+gr:nm>=21*60));
+  return {expected:passed.length,
+    taken:passed.filter(x=>x.status==='taken').length,
+    skipped:passed.filter(x=>x.status==='skipped').length};
+}
 function pillAdherence(days,endYMD){
   const end=endYMD||pillToday(), floor=state.settings.pillbox.floorDate;
   let exp=0,tak=0,ski=0,daysCounted=0;
   for(let k=0;k<days;k++){
     const d=addDayYMD(end,-k);
     if(floor&&d<floor) break;
-    const box=pillboxForDate(d);
-    if(!box.counts.expected) continue;
-    let e=box.counts.expected,t=box.counts.taken,s=box.counts.skipped;
-    if(d===pillToday()){
-      const nm=nowMin(), gr=state.settings.pillbox.lateAfterMin||60;
-      const passed=box.slots.filter(x=>!x.extra&&(x.estMin!==ANY_MIN?nm>x.estMin+gr:nm>=21*60));
-      e=passed.length; t=passed.filter(x=>x.status==='taken').length; s=passed.filter(x=>x.status==='skipped').length;
-      if(!e) continue;
-    }
-    exp+=e; tak+=Math.min(t,e); ski+=s; daysCounted++;
+    const c=pillDayCounts(d);
+    if(!c.expected) continue;
+    exp+=c.expected; tak+=Math.min(c.taken,c.expected); ski+=c.skipped; daysCounted++;
   }
   return {expected:exp,taken:tak,skipped:ski,days:daysCounted,pct:exp?Math.round(Math.min(100,tak/exp*100)):null};
 }
@@ -3768,7 +3883,9 @@ function pillDayView(date){
   }
   if(box.notApplicable.length){
     h+='<div class="section-title">Sans objet aujourd’hui</div><div class="card" style="padding:12px">'
-     +'<div class="small muted" style="margin-bottom:8px">Pas de séance prévue aujourd’hui — ces prises ne te sont pas rappelées.</div>'
+     +'<div class="small muted" style="margin-bottom:8px">'+(state.settings.modules.sport
+        ?'Pas de séance prévue aujourd’hui — ces prises ne te sont pas rappelées.'
+        :'Le module Sport est désactivé : Élan ne sait pas quand tu t’entraînes, donc ces prises ne te sont pas rappelées.')+'</div>'
      +box.notApplicable.map(s=>'<div class="row pill-slot is-na">'
        +'<div class="row-ic">'+(s.product.icon||'💊')+'</div>'
        +'<div class="row-main"><div class="row-title">'+esc(s.product.name)+'</div>'
@@ -3810,14 +3927,16 @@ function pillWeekView(){
       else if(s.status==='taken'){ cls='pw-ok'; sym='✓'; }
       else if(s.status==='skipped'){ cls='pw-skip'; sym='✕'; }
       else if(!s.eligible){ cls='pw-na'; sym='–'; }
+      else if(d===pillToday()){ cls='pw-future'; sym='○'; }   // la journée n'est pas finie : rien de « manqué »
       else { cls='pw-miss'; sym='·'; }
       h+='<div class="pw-cell '+cls+(d===pillToday()?' today':'')+'" data-act="pill-goto-day" data-date="'+d+'">'+sym+'</div>';
     });
     h+='</div>';
   });
-  let exp=0,tak=0; boxes.forEach(b=>{ exp+=b.counts.expected; tak+=b.counts.taken; });
+  let exp=0,tak=0;
+  days.forEach(d=>{ const c=pillDayCounts(d); exp+=c.expected; tak+=c.taken; });
   h+='<div class="small muted center" style="margin-top:10px">Observance de la semaine · '
-   +(exp?Math.round(tak/exp*100)+' % ('+tak+'/'+exp+')':'—')+'</div></div>';
+   +(exp?Math.round(tak/exp*100)+' % ('+tak+'/'+exp+')':'pas encore de prise attendue')+'</div></div>';
   return h;
 }
 function pillProductsView(){
@@ -3893,7 +4012,14 @@ function pillGroupSplit(groupId,days){
     pct:total?Math.round((counts[s.id]||0)/total*100):0})).sort((a,b)=>b.n-a.n)};
 }
 function screenMedDetail(id){
-  const m=medById(id); if(!m){ nav('/pilulier'); return ''; }
+  if(!state.settings.modules.pillbox)
+    return backHead('Produit','/plus')
+      +'<div class="card"><div class="row-title">💊 Pilulier désactivé</div>'
+      +'<div class="small muted" style="margin:6px 0 12px">Active le pilulier pour revoir ce produit. Rien n’a été supprimé.</div>'
+      +'<button class="btn btn--primary btn--block" data-act="mod-on" data-k="pillbox">Activer le pilulier</button></div>';
+  const m=medById(id);
+  if(!m) return backHead('Produit','/pilulier')+empty('💊','Produit introuvable','Il a peut-être été supprimé.',
+    '<button class="btn btn--primary" data-act="go" data-route="/pilulier">Revenir au pilulier</button>');
   const scs=(state.medSchedules||[]).filter(s=>s.productId===id);
   const groups=(state.medGroups||[]).filter(g=>g.productId===id);
   const st=pillProductStats(id,30);
@@ -4069,7 +4195,10 @@ function savePillSchedule(pid,id){
   }
   F.qty=(g('sQty')||'').trim();
   F.label=(g('sLabel')||'').trim();
-  let grp=g('sGroup');
+  /* Si le sélecteur de groupe n'a pas été rendu, on ne touche PAS à l'appartenance
+     existante : l'absence de champ ne vaut pas « retirer du groupe ». */
+  const grpEl=document.getElementById('sGroup');
+  let grp=grpEl?grpEl.value:(F.groupId||'');
   const now=new Date().toISOString();
   if(grp==='__new'){
     const p=medById(pid);
@@ -4126,9 +4255,14 @@ function savePillGroup(pid,gid){
 }
 function deletePillGroup(gid){
   const g=groupById(gid); if(!g) return;
-  (state.medSchedules||[]).forEach(s=>{ if(s.groupId===gid) s.groupId=null; });
-  state.medGroups=state.medGroups.filter(x=>x.id!==gid);
-  closeSheet(); update(); toast('Les créneaux redeviennent indépendants');
+  confirmSheet('Séparer les créneaux',
+    'Les créneaux de ce groupe redeviendront indépendants : Élan attendra alors une prise pour CHACUN, au lieu d’une seule parmi eux. L’historique est conservé.',()=>{
+    const touched=(state.medSchedules||[]).filter(s=>s.groupId===gid).map(s=>s.id);
+    touched.forEach(id=>{ const sc=schedById(id); if(sc) sc.groupId=null; });
+    state.medGroups=state.medGroups.filter(x=>x.id!==gid);
+    closeSheet(); update();
+    toast('Créneaux séparés',()=>{ state.medGroups.push(g); touched.forEach(id=>{ const sc=schedById(id); if(sc) sc.groupId=gid; }); update(); });
+  },false,'Séparer');
 }
 function pillTakeSheet(slot){
   PILL_TAKE={key:slot.key,scheduleId:slot.scheduleId};
@@ -4215,13 +4349,11 @@ function pillDownloadIcsAll(){
   setTimeout(()=>URL.revokeObjectURL(url),2000);
   toast('Fichier .ics créé — ouvre-le pour l’ajouter au calendrier');
 }
-/* Rappel à l'ouverture : la seule « notification » possible dans une PWA iOS. */
-function pillBootNudge(){
-  if(!state.settings.modules.pillbox) return;
-  const box=pillboxForDate(pillToday()), nm=nowMin();
-  const late=box.slots.filter(s=>!s.extra&&s.status==='pending'&&s.estMin!==ANY_MIN&&nm>s.estMin+(state.settings.pillbox.lateAfterMin||60));
-  if(late.length===1) toast('⏰ '+late[0].product.name+' — prévu '+late[0].timeLabel);
-  else if(late.length>1) toast('⏰ '+late.length+' prises en retard aujourd’hui');
+/* Prises en retard du jour (sert au rappel d'ouverture). */
+function pillLateToday(){
+  if(!state.settings.modules.pillbox) return [];
+  const box=pillboxForDate(pillToday()), nm=nowMin(), gr=state.settings.pillbox.lateAfterMin||60;
+  return box.slots.filter(s=>!s.extra&&s.status==='pending'&&s.estMin!==ANY_MIN&&nm>s.estMin+gr);
 }
 
 /* ---------- Écran : Plus ---------- */
@@ -4255,7 +4387,7 @@ function screenPlus(){
        +'<button class="chip chip--act" data-act="mod-on" data-k="'+o[0]+'">Activer</button></div>').join('')+'</div>';
   }
   h+='<div class="small muted center" style="margin-top:20px">Élan v'+esc(state.meta.appVersion)+' · '
-   +weighIns().length+' pesées · données locales</div>';
+   +weighIns().length+' '+plural(weighIns().length,'pesée')+' · données locales</div>';
   return h;
 }
 
@@ -4330,7 +4462,7 @@ function saveGoal(){
 
 /* ---------- Écran : Paliers ---------- */
 function screenPaliers(){
-  const done=(state.milestones||[]).slice().sort((a,b)=>a.reachedAt<b.reachedAt?1:-1);
+  const done=(state.milestones||[]).filter(m=>defByCode(m.code)).sort((a,b)=>a.reachedAt<b.reachedAt?1:-1);
   let h=backHead('Paliers','/plus');
   const nm=nextMilestone();
   if(nm) h+='<div class="card card--accent"><div class="today-top"><div class="today-ic">'+nm.def.emoji+'</div>'
@@ -4339,7 +4471,7 @@ function screenPaliers(){
    +'<div class="bar" style="margin-top:10px"><span class="bar-seg" data-bar="'+nm.pct.toFixed(3)+'" style="background:var(--grad-brand)"></span></div></div>';
   if(!done.length) return h+empty('🏅','Aucun palier franchi pour l’instant','Ils arriveront. Le premier est souvent le plus beau.');
   h+='<div class="section-title">'+done.length+' '+plural(done.length,'palier')+' '+plural(done.length,'franchi')+'</div><div class="list">'
-   +done.map(m=>{ const d=defByCode(m.code); if(!d) return '';
+   +done.map(m=>{ const d=defByCode(m.code);
      return '<div class="row"><div class="row-ic">'+d.emoji+'</div>'
       +'<div class="row-main"><div class="row-title">'+esc(d.label)+'</div>'
       +'<div class="row-sub">le '+esc(fmtDateLong(m.reachedAt))+'</div></div></div>'; }).join('')
@@ -4373,9 +4505,17 @@ function motivationEditor(id){
 /* ---------- Écran : Analyse ---------- */
 function screenAnalyse(){
   let h=backHead('Analyse','/plus');
+  const nW=weighIns().length;
+  if(nW<4){
+    return h+empty('🔬','Pas encore de quoi analyser',
+      nW===0?'Cet écran croise ton poids, ta composition, ton sport et ce que tu manges. Il lui faut d’abord quelques matins de pesée.'
+            :'Encore '+(4-nW)+' '+plural(4-nW,'pesée')+' et je commence à croiser tes chiffres. Rien ne presse : une par matin suffit.',
+      '<button class="btn btn--primary" data-act="weigh-in">⚖️ Saisir ma pesée</button>');
+  }
   const cov=coverage(30);
-  if(cov<0.40) h+='<div class="card card--warn"><div class="small muted">Tu as '+windowOf(serieW(),isoToday(),30).length
-    +' pesées sur les 30 derniers jours. Les analyses ci-dessous sont indicatives.</div></div>';
+  if(cov<0.40){ const n30=windowOf(serieW(),isoToday(),30).length;
+    h+='<div class="card card--warn"><div class="small muted">Tu as '+n30+' '+plural(n30,'pesée')
+      +' sur les 30 derniers jours. Les analyses ci-dessous sont indicatives.</div></div>'; }
   const list=buildInsights().filter(i=>i.prio<99&&(cov>=0.40||i.prio>=70));
   if(list.length){
     h+='<div class="section-title">Ce que disent tes chiffres</div>';
@@ -4383,7 +4523,8 @@ function screenAnalyse(){
       +'<div class="insight-ic">'+(i.emoji||'💡')+'</div><div class="insight-txt">'+esc(i.text)+'</div></div>').join('');
   }
   /* Composition : la vraie réponse à « le % ne veut pas dire grand-chose ». */
-  const dw=compDelta(PICK_W,28), df=compDelta(PICK_FATK,28), dp=compDelta(PICK_FATP,28);
+  const dw=compDelta(PICK_W,28), df=metricOn('fat')?compDelta(PICK_FATK,28):{ok:false}, dp=compDelta(PICK_FATP,28);
+  if(metricOn('fat')){
   h+='<div class="section-title">Ton corps sur 28 jours</div>';
   if(dw.ok&&df.ok){
     const it=interpretComposition(dw.delta,df.delta,dp.ok?dp.delta:0);
@@ -4399,26 +4540,28 @@ function screenAnalyse(){
      +'<div class="bar" style="margin-top:10px"><span class="bar-seg" data-bar="'+q.ratio.toFixed(2)+'" style="background:var(--grad-brand)"></span></div>'
      +'<div class="small muted" style="margin-top:8px">Sur 28 jours : '+fmtKg(q.lossKg)+' perdus, dont <b>'+fmtKg(q.fatKg)+' de graisse</b> ('+q.pct+' %). Qualité de perte '+esc(q.label)+'.</div></div>';
   } else h+='<div class="card"><div class="small muted">Il faut au moins deux semaines de mesures de composition pour dire quoi que ce soit d’honnête. On y sera bientôt.</div></div>';
+  }
 
   /* Bilan énergétique */
   h+='<div class="section-title">Ton énergie</div>';
   const bmr=bmrMifflin(refWeight().kg,state.settings.profile.heightCm,profileAge(),state.settings.profile.sex);
   const tdee=tdeeTheo(), obs=tdeeObserved(), scale=lastScaleKcal();
-  h+='<div class="card"><div class="stats">'
+  const showScale=metricOn('kcalOut')&&scale!=null;
+  h+='<div class="card"><div class="stats'+(showScale?'':' stats-2')+'">'
    +statCard('Métabolisme',bmr!=null?nf(bmr,0):'—','au repos','')
    +statCard('Dépense estimée',tdee!=null?nf(tdee,0):'—',palOf(currentPal()).label,'')
-   +statCard('Balance',scale!=null?nf(scale,0):'—','ce qu’elle affiche','')
+   +(showScale?statCard('Balance',nf(scale,0),'ce qu’elle affiche',''):'')
    +'</div>';
-  if(scale!=null&&bmr!=null){
-    const impliedPal=scale/bmr;
-    h+='<div class="small muted" style="margin-top:10px">Ta balance annonce '+nf(scale,0)+' kcal/jour, ce qui suppose un niveau d’activité de '+nf(impliedPal,2)
-     +' — l’équivalent de 5 à 6 séances par semaine. Une balance ne mesure pas ta dépense : elle l’estime à partir de ton poids.</div>';
+  if(showScale&&bmr!=null){
+    h+='<div class="small muted" style="margin-top:10px">Ta balance annonce '+nf(scale,0)+' kcal/jour, ce qui suppose un niveau d’activité de '+nf(scale/bmr,2)
+     +' — l’équivalent de cinq à six séances par semaine. Une balance ne mesure pas ta dépense : elle l’estime à partir de ton poids.</div>';
   }
   if(obs.ok) h+='<div class="insight" style="margin-top:12px"><div class="insight-ic">🔥</div><div class="insight-txt">'
    +'D’après ce que tu manges (<strong>'+nf(obs.intake,0)+' kcal/jour</strong> en moyenne) et ce que tu perds ('+fmtKg(-obs.kgWeek)+'/semaine), ta dépense réelle tourne autour de <strong>'+nf(obs.kcal,0)+' kcal par jour</strong>.'
    +'</div></div><div class="hint" style="margin-top:6px">Calcul indirect : si tu sous-estimes tes portions, ce chiffre est sous-estimé aussi.</div>';
-  else if(state.settings.modules.kcalIn) h+='<div class="hint" style="margin-top:10px">Pour calculer ta dépense réelle, il faut au moins 20 jours de calories et 12 pesées sur les 28 derniers jours.</div>';
-  else h+='<div class="card" style="margin-top:12px"><div class="small muted">Active le module <b>Calories mangées</b> pour découvrir ta dépense réelle — c’est le calcul le plus parlant de l’app.</div>'
+  else if(state.settings.modules.kcalIn) h+='<div class="hint" style="margin-top:10px">Pour calculer ta dépense réelle, il faut au moins vingt jours de calories et douze pesées sur les vingt-huit derniers jours.</div>';
+  h+='</div>';
+  if(!state.settings.modules.kcalIn) h+='<div class="card"><div class="small muted">Active le module <b>Calories mangées</b> pour découvrir ta dépense réelle — c’est le calcul le plus parlant de l’app.</div>'
    +'<button class="btn btn--ghost btn--block" data-act="mod-on" data-k="kcalIn" style="margin-top:10px">Activer les calories</button></div>';
 
   /* Jour de la semaine */
@@ -4458,7 +4601,7 @@ function screenCalories(){
   const S=seriesOf(PICK_KIN);
   const w7=windowOf(S,isoToday(),7), w30=windowOf(S,isoToday(),30);
   const eb=energyBalance(), obs=tdeeObserved();
-  let h=backHead('Calories','/plus','<button class="btn-add" data-act="weigh-in">+ Saisir</button>');
+  let h=backHead('Calories','/plus','<button class="btn-add" data-act="quick-kcal">+ Noter</button>');
   h+='<div class="stats" style="margin-top:12px">'
    +statCard('Moyenne 7 j',w7.length?nf(meanOf(w7.map(p=>p.v)),0):'—',w7.length+' '+plural(w7.length,'jour'),'')
    +statCard('Moyenne 30 j',w30.length?nf(meanOf(w30.map(p=>p.v)),0):'—',w30.length+' '+plural(w30.length,'jour'),'')
@@ -4485,7 +4628,7 @@ function screenCalories(){
   h+='<button class="btn btn--ghost btn--block" data-act="go" data-route="/courbes" style="margin-top:12px">📈 Voir le décalage sur la courbe</button>';
   const days=[]; for(let i=13;i>=0;i--){ const d=addDayYMD(isoToday(),-i); days.push({d:d,v:mv(entryFor(d),'kcalIn')}); }
   h+='<div class="section-title">14 derniers jours</div><div class="list">'
-   +days.slice().reverse().map(x=>'<div class="row" data-act="weigh-in" data-date="'+x.d+'">'
+   +days.slice().reverse().map(x=>'<div class="row" data-act="quick-kcal" data-date="'+x.d+'">'
      +'<div class="row-ic">'+(x.v==null?'—':'🍽️')+'</div>'
      +'<div class="row-main"><div class="row-title">'+esc(capit(fmtDayLabel(x.d)))+'</div>'
      +'<div class="row-sub">'+(x.v==null?'non renseigné':nf(x.v,0)+' kcal')+'</div></div>'+arrowHTML()+'</div>').join('')
@@ -4493,9 +4636,39 @@ function screenCalories(){
   return h;
 }
 
+/* Saisie éclair d'une seule métrique : le soir, noter ses calories ne doit pas
+   demander de dérouler toute la feuille de pesée. */
+function openQuickMetric(k,date){
+  date=validYMD(date)?date:isoToday();
+  const M=METRICS[k]; if(!M) return;
+  const e=entryFor(date), cur=e?mv(e,k):null;
+  openSheet(M.emoji+' '+M.label+' — '+capit(fmtDayLabel(date)),
+    '<div class="field"><label>'+esc(M.label)+(M.unit?' ('+esc(M.unit)+')':'')+'</label>'
+    +'<input class="input tnum" id="qmVal" inputmode="decimal" autocomplete="off" value="'+(cur!=null?nf(cur,M.dec):'')+'" placeholder="—"></div>'
+    +'<div class="chip-row">'+[[0,"Aujourd'hui"],[-1,'Hier'],[-2,'Avant-hier']].map(o=>{
+        const d=addDayYMD(isoToday(),o[0]);
+        return '<button class="chip'+(date===d?' is-active':'')+'" data-act="qm-day" data-k="'+k+'" data-date="'+d+'">'+esc(o[1])+'</button>'; }).join('')+'</div>'
+    +'<div class="sheet-foot"><button class="btn btn--primary btn--block btn--lg" data-act="qm-save" data-k="'+k+'" data-date="'+date+'">Enregistrer</button>'
+    +'<button class="btn-add" data-act="weigh-in" data-date="'+date+'" style="margin-top:6px">Saisir toute la pesée ›</button></div>',
+    {onOpen:()=>{ const el=document.getElementById('qmVal'); if(el) try{ el.focus(); }catch(x){} }});
+}
+function saveQuickMetric(k,date){
+  const el=document.getElementById('qmVal');
+  const v=parseNum(el?el.value:null);
+  const e=ensureEntry(date);
+  setMetric(e,k,v,METRICS[k].unit||defaultUnitOf(k));
+  const vide=entryIsEmpty(e);
+  if(vide) deleteEntry(date);
+  closeSheet(); update();
+  toast(v==null?'Valeur effacée':(METRICS[k].label+' enregistré ✓'));
+}
+
 /* ---------- Écran : Mes mesures ---------- */
 function screenMetrics(){
   let h=backHead('Mes mesures','/plus');
+  if(WI_RETOUR) h+='<div class="card card--accent"><div class="row-title">⚖️ Ta pesée t’attend</div>'
+    +'<div class="small muted" style="margin:5px 0 10px">Ce que tu avais tapé est enregistré. Coche ce que tu veux saisir, puis reviens-y.</div>'
+    +'<button class="btn btn--primary btn--block" data-act="wi-resume">Reprendre la pesée du '+esc(fmtDateShort(WI_RETOUR))+'</button></div>';
   h+='<div class="hint" style="margin-bottom:12px">Choisis ce que tu saisis chaque matin. Décoche ce que ta balance ne donne pas — tu pourras réactiver quand tu veux, sans rien perdre.</div>';
   const groups=[['Balance',['weight','fat','water','muscle','bone','protein','kcalOut','visceral','bmr','metaAge']],
     ['Mesures au mètre',['waist','hips','chest','arm','thigh','neck']],
@@ -4542,13 +4715,15 @@ function screenAide(){
 function screenSettings(){
   const s=state.settings, p=s.profile;
   let h=backHead('Réglages','/plus');
+  /* Tous les réglages s'enregistrent tout seuls quand on quitte le champ : pas de bouton
+     « Enregistrer » à ne pas oublier. `data-set` dit où écrire, `data-type` comment lire. */
   h+='<div class="section-title">Profil</div><div class="card">'
-   +'<div class="field"><label>Prénom (facultatif)</label><input class="input" id="stName" value="'+esc(p.firstName||'')+'" placeholder="Comment t’appeler ?"></div>'
-   +'<div class="row-2"><div class="field"><label>Taille (cm)</label><input class="input tnum" id="stHeight" inputmode="numeric" value="'+(p.heightCm||'')+'"></div>'
-   +'<div class="field"><label>Année de naissance</label><input class="input tnum" id="stYear" inputmode="numeric" value="'+(p.birthYear||'')+'" placeholder="1999"></div></div>'
+   +'<div class="field"><label>Prénom (facultatif)</label><input class="input" id="stName" data-set="profile.firstName" data-type="text" value="'+esc(p.firstName||'')+'" placeholder="Comment t’appeler ?"></div>'
+   +'<div class="row-2"><div class="field"><label>Taille (cm)</label><input class="input tnum" id="stHeight" data-set="profile.heightCm" data-type="int" data-min="120" data-max="230" data-rerender="1" inputmode="numeric" value="'+(p.heightCm||'')+'"></div>'
+   +'<div class="field"><label>Année de naissance</label><input class="input tnum" id="stYear" data-set="profile.birthYear" data-type="int" data-min="1900" data-max="'+new Date().getFullYear()+'" inputmode="numeric" value="'+(p.birthYear||'')+'" placeholder="1999"></div></div>'
    +'<div class="field"><label>Sexe <span class="muted">(pour le métabolisme de base)</span></label>'
    +segHTML([['m','Homme'],['f','Femme']],p.sex,'st-sex','')+'</div>'
-   +'<button class="btn btn--primary btn--block" data-act="st-save-profile" style="margin-top:6px">Enregistrer le profil</button></div>';
+   +'<div class="hint">Enregistré automatiquement.</div></div>';
 
   h+='<div class="section-title">Objectif</div><div class="card">'
    +'<div class="flex between aic"><div><div class="row-title">'+(targetWeight()!=null?fmtKg(targetWeight()):'Aucun objectif')+'</div>'
@@ -4569,39 +4744,46 @@ function screenSettings(){
 
   if(s.modules.sport){
     h+='<div class="section-title">Sport</div><div class="card">'
-     +'<div class="row-2"><div class="field"><label>Objectif hebdo (min)</label><input class="input tnum" id="stWgMin" inputmode="numeric" value="'+(s.sport.weeklyGoalMin||0)+'"></div>'
-     +'<div class="field"><label>Séances / semaine</label><input class="input tnum" id="stWgSes" inputmode="numeric" value="'+(s.sport.weeklyGoalSessions||0)+'"></div></div>'
+     +'<div class="row-2"><div class="field"><label>Objectif hebdo (min)</label><input class="input tnum" id="stWgMin" data-set="sport.weeklyGoalMin" data-type="int" data-min="0" data-max="2000" inputmode="numeric" value="'+(s.sport.weeklyGoalMin||0)+'"></div>'
+     +'<div class="field"><label>Séances / semaine</label><input class="input tnum" id="stWgSes" data-set="sport.weeklyGoalSessions" data-type="int" data-min="0" data-max="21" inputmode="numeric" value="'+(s.sport.weeklyGoalSessions||0)+'"></div></div>'
      +'<div class="field"><label>Calories brûlées</label>'+segHTML([['estimate','Estimer'],['off','Ne pas afficher']],s.sport.kcalMode,'st-kcalmode','')+'</div>'
-     +'<button class="btn btn--ghost btn--block" data-act="st-save-sport">Enregistrer</button></div>';
+     +'<div class="hint">Enregistré automatiquement.</div></div>';
   }
   if(s.modules.pillbox){
     const P=s.pillbox;
     h+='<div class="section-title">Pilulier</div><div class="card">'
      +toggleHTML('Rappel sur l’accueil',!!P.showOnHome,'pillset-toggle',' data-k="showOnHome"')
      +'<div class="divider"></div>'
-     +'<div class="small muted" style="margin-bottom:8px">Ces heures ne servent qu’à classer les prises dans le bon ordre. Tu peux valider quand tu veux.</div>'
+     +'<div class="small muted" style="margin-bottom:10px">Ces heures ne servent qu’à <b>classer</b> les prises dans le bon ordre. Tu peux valider quand tu veux.</div>'
+     +'<div class="stat-label" style="margin-bottom:6px">Moments de la journée</div>'
      +'<div class="row-2">'+MOMENT_ORDER.filter(k=>k!=='peuimporte').map(k=>
-        '<div class="field"><label>'+esc(MOMENT_LABEL[k])+'</label><input class="input" type="time" id="pt-'+k+'" value="'+esc(P.momentTimes[k])+'"></div>').join('')+'</div>'
+        '<div class="field"><label>'+esc(MOMENT_LABEL[k])+'</label><input class="input" type="time" id="pt-'+k+'" data-set="pillbox.momentTimes.'+k+'" data-type="time" value="'+esc(P.momentTimes[k])+'"></div>').join('')+'</div>'
+     +'<div class="stat-label" style="margin:10px 0 6px">Repas</div>'
      +'<div class="row-2">'+Object.keys(MEAL_LABEL).map(k=>
-        '<div class="field"><label>'+esc(capit(MEAL_LABEL[k]))+'</label><input class="input" type="time" id="mt-'+k+'" value="'+esc(P.mealTimes[k])+'"></div>').join('')+'</div>'
-     +'<div class="row-2"><div class="field"><label>Heure d’entraînement par défaut</label><input class="input" type="time" id="pwTime" value="'+esc(P.defaultWorkoutTime)+'"></div>'
-     +'<div class="field"><label>Durée de séance supposée (min)</label><input class="input tnum" id="pwDur" inputmode="numeric" value="'+P.defaultSessionMin+'"></div></div>'
-     +'<button class="btn btn--ghost btn--block" data-act="st-save-pill">Enregistrer</button></div>';
+        '<div class="field"><label>'+esc(capit(MEAL_LABEL[k]))+'</label><input class="input" type="time" id="mt-'+k+'" data-set="pillbox.mealTimes.'+k+'" data-type="time" value="'+esc(P.mealTimes[k])+'"></div>').join('')+'</div>'
+     +'<div class="stat-label" style="margin:10px 0 6px">Séance</div>'
+     +'<div class="row-2"><div class="field"><label>Heure par défaut</label><input class="input" type="time" id="pwTime" data-set="pillbox.defaultWorkoutTime" data-type="time" value="'+esc(P.defaultWorkoutTime)+'"></div>'
+     +'<div class="field"><label>Durée supposée (min)</label><input class="input tnum" id="pwDur" data-set="pillbox.defaultSessionMin" data-type="int" data-min="5" data-max="300" inputmode="numeric" value="'+P.defaultSessionMin+'"></div></div>'
+     +'<div class="hint">Sert à placer « 15 min après la séance » quand l’heure réelle n’est pas connue. Enregistré automatiquement.</div></div>';
   }
-  if(s.modules.kcalIn){
-    h+='<div class="section-title">Énergie</div><div class="card">'
-     +'<div class="field"><label>Niveau d’activité</label>'
-     +'<select class="input" id="stPal">'+[['auto','Automatique (d’après tes séances)']].concat(PAL.map(x=>[x.code,x.label+' — '+x.hint]))
-        .map(o=>'<option value="'+o[0]+'"'+((s.energy.palMode==='auto'?'auto':s.energy.pal)===o[0]?' selected':'')+'>'+esc(o[1])+'</option>').join('')+'</select>'
-     +'<div class="hint">Sert à estimer ta dépense théorique. Élan calcule aussi ta dépense <b>observée</b>, bien plus fiable.</div></div></div>';
-  }
+  h+='<div class="section-title">Énergie</div><div class="card">'
+   +'<div class="field"><label>Niveau d’activité</label>'
+   +'<select class="input" id="stPal">'
+   +[['auto','Automatique'+(s.modules.sport?' (d’après tes séances)':' — nécessite le module Sport')]]
+     .concat(PAL.map(x=>[x.code,x.label+' — '+x.hint]))
+     .map(o=>'<option value="'+o[0]+'"'+((s.energy.palMode==='auto'?'auto':s.energy.pal)===o[0]?' selected':'')+'>'+esc(o[1])+'</option>').join('')+'</select>'
+   +'<div class="hint">Sert à estimer ta dépense théorique.'
+   +(s.modules.kcalIn?' Élan calcule aussi ta dépense <b>observée</b>, bien plus fiable.'
+                     :' Active les <b>calories mangées</b> pour qu’Élan calcule en plus ta dépense réelle.')
+   +(s.energy.palMode==='auto'&&!s.modules.sport?' Sans le module Sport, « Automatique » retombe sur le niveau choisi ci-dessus.':'')
+   +'</div></div></div>';
   h+='<div class="section-title">Affichage</div><div class="card">'
    +'<div class="field"><label>Couleur d’accent</label>'
    +segHTML([['vert','Vert'],['ocean','Océan'],['violet','Violet'],['corail','Corail']],s.accentTheme,'st-accent','seg--sm')+'</div>'
    +'<div class="field"><label>Écran de démarrage</label>'
    +segHTML([['/','Accueil'],['/courbes','Courbes'],['/tableau','Tableau']],s.firstScreen,'st-first','seg--sm')+'</div>'
    +'<div class="field"><label>Densité</label>'+segHTML([['comfortable','Confort'],['compact','Compact']],s.density,'st-density','')+'</div>'
-   +toggleHTML('Masquer les chiffres',!!s.numberPrivacy,'st-toggle',' data-k="numberPrivacy"','floute les valeurs, tap pour révéler')
+   +toggleHTML('Masquer les chiffres',!!s.numberPrivacy,'st-toggle',' data-k="numberPrivacy"','floute les valeurs — garde le doigt appuyé pour les révéler')
    +toggleHTML('Vibrations',s.hapticsOn!==false,'st-toggle',' data-k="hapticsOn"')
    +toggleHTML('Célébrations',s.celebrateOn!==false,'st-toggle',' data-k="celebrateOn"','confettis quand tu franchis un palier')
    +toggleHTML('Réduire les animations',s.reduceMotion===true,'st-toggle',' data-k="reduceMotion"')
@@ -4662,12 +4844,23 @@ function dailySnapshot(){
   const last=state.meta.lastSnapAt?Date.parse(state.meta.lastSnapAt):0;
   if(Date.now()-last<20*3600*1000) return false;
   if(!(state.entries||[]).length) return false;
-  try{
-    const s2=localStorage.getItem('elan.snap.2'); if(s2) localStorage.setItem('elan.snap.3',s2);
-    const s1=localStorage.getItem('elan.snap.1'); if(s1) localStorage.setItem('elan.snap.2',s1);
-  }catch(e){}
   const payload=JSON.stringify({savedAt:new Date().toISOString(),rev:state.meta.rev,counts:backupCounts(state),data:state});
-  if(!safeSet('elan.snap.1',payload)) return false;
+  let s1=null,s2=null,s3=null;
+  try{ s1=localStorage.getItem('elan.snap.1'); s2=localStorage.getItem('elan.snap.2'); s3=localStorage.getItem('elan.snap.3'); }catch(e){}
+  try{
+    if(s2) localStorage.setItem('elan.snap.3',s2);
+    if(s1) localStorage.setItem('elan.snap.2',s1);
+  }catch(e){}
+  if(!safeSet('elan.snap.1',payload)){
+    /* L'instantané n'a pas pu être écrit : on remet les anciens en place plutôt que
+       de perdre deux points de restauration pour rien. */
+    try{
+      if(s1!=null) localStorage.setItem('elan.snap.1',s1); else localStorage.removeItem('elan.snap.1');
+      if(s2!=null) localStorage.setItem('elan.snap.2',s2); else localStorage.removeItem('elan.snap.2');
+      if(s3!=null) localStorage.setItem('elan.snap.3',s3); else localStorage.removeItem('elan.snap.3');
+    }catch(e){}
+    return false;
+  }
   state.meta.lastSnapAt=new Date().toISOString(); saveNow(); return true;
 }
 function restorePoints(){
@@ -4683,7 +4876,7 @@ function restoreFrom(k){
   const n=(s.counts&&s.counts.entries)||0, cur=state.entries.length;
   confirmSheet('Restaurer','Revenir à l’état du '+fmtDateTime(s.savedAt)+' ('+n+' pesées'
     +(cur>n?(', tu en perdrais '+(cur-n)):'')+') ? Un filet de sécurité est gardé.',()=>{
-    snapshotPrev('avant restauration'); state=migrate(s.data); invalidateCache(); saveNow(); closeSheet(); nav('/'); render(); toast('État restauré ✓');
+    LOAD_ERROR=null; snapshotPrev('avant restauration'); state=migrate(s.data); invalidateCache(); saveNow(); closeSheet(); nav('/'); render(); toast('État restauré ✓');
   },true,'Restaurer');
 }
 function storageUsedText(){
@@ -4798,7 +4991,14 @@ function showImportPreview(res){
      const x=pv[c.key];
      return '<div class="kv"><span class="kv-k">'+esc(c.label)+'</span><span class="kv-v">'+x.current+' → '+(x.current+x.added)
        +(x.added?' <span class="down">(+'+x.added+')</span>':'')+(x.updated?' <span class="muted small">'+x.updated+' complétées</span>':'')+'</span></div>'; }).join('')
-   +'<div class="kv"><span class="kv-k">Réglages</span><span class="kv-v">fusionnés</span></div></div>';
+   +'</div>';
+  /* Les réglages ne se « fusionnent » pas : soit on garde les siens, soit on reprend ceux
+     de la sauvegarde. On le dit, et on laisse choisir — coché par défaut sur un téléphone
+     neuf (c'est le cas du changement d'appareil), décoché si l'app est déjà configurée. */
+  h+='<div class="card">'
+   +toggleHTML('Reprendre aussi les réglages',localEmpty,'imp-settings',' id="impSettings"',
+      'profil, objectif, modules, mesures affichées et préférences')
+   +'<div class="hint">Décoché, tes réglages actuels sont conservés tels quels.</div></div>';
   h+='<div class="sheet-foot">'
    +'<button class="btn btn--primary btn--block" data-act="bk-do-import" data-mode="merge">🔀 '+(localEmpty?'Restaurer mes données':'Fusionner — recommandé')+'</button>'
    +'<div class="hint" style="margin:6px 0 10px">Rien de ce que tu as ne sera perdu.</div>'
@@ -4806,13 +5006,30 @@ function showImportPreview(res){
    +'</div>';
   openSheet('Importer une sauvegarde',h);
 }
-function applyImport(data,mode){
+function applyImport(data,mode,withSettings){
+  LOAD_ERROR=null;
   snapshotPrev(mode==='replace'?'avant remplacement par une sauvegarde':'avant fusion d’une sauvegarde');
+  const avant=JSON.parse(JSON.stringify(state));   // filet en mémoire : une fusion est tout ou rien
+  try{
   if(mode==='replace'){ state=migrate(data); }
   else{
     COLLECTIONS.forEach(c=>{ state[c.key]=mergeCollection(c,state[c.key]||[],data[c.key]||[]); });
-    state.settings=deepDefaults(Object.assign({},state.settings,data.settings||{}),defaultDB().settings);
+    if(withSettings){
+      state.settings=deepDefaults(Object.assign({},state.settings,data.settings||{}),defaultDB().settings);
+      /* `ui` porte aussi des décisions de l'utilisateur (les jours « sans pesée » assumés) :
+         les perdre au changement de téléphone casserait sa série pour rien. */
+      const ui=data.ui||{};
+      state.ui=Object.assign({},state.ui,ui,{skippedDays:Object.assign({},state.ui.skippedDays||{},ui.skippedDays||{})});
+    } else {
+      const ui=data.ui||{};
+      state.ui.skippedDays=Object.assign({},state.ui.skippedDays||{},ui.skippedDays||{});
+    }
     state=migrate(state);
+  }
+  }catch(err){
+    state=avant; invalidateCache(); saveNow(); closeSheet(); render();
+    toast('Import interrompu — rien n’a été modifié');
+    return;
   }
   touch(); invalidateCache(); saveNow(); closeSheet(); nav('/'); render();
   toast(mode==='replace'?'Données remplacées ✓':'Fusion terminée ✓');
@@ -4872,6 +5089,7 @@ async function cloudRead(){
   return parsed;
 }
 async function cloudPull(remote){
+  LOAD_ERROR=null;
   snapshotPrev('avant récupération de la copie cloud');
   state=migrate(remote.data); invalidateCache(); saveNow();
   const c=syncCfg(); c.lastRemoteRev=remote.rev; c.lastLocalRev=state.meta.rev;
@@ -4900,14 +5118,28 @@ async function syncNow(manual){
     const n=syncCfg(); n.lastAutoAt=new Date().toISOString(); n.lastError=null; n.status='ok'; saveSyncCfg(n);
     SYNC_STATE='ok';
     if(manual) toast('Synchronisé ✓');
-  }catch(e){ SYNC_STATE='err'; handleSyncError(e,manual); }
+  }catch(e){
+    /* Copie cloud vide ou illisible : on tient la promesse faite à l'utilisateur
+       et on la remplace tout de suite par l'état local (s'il y a quelque chose à pousser). */
+    if((e.kind==='nofile'||e.kind==='badremote')&&(state.entries||[]).length){
+      try{ await cloudPush(); SYNC_STATE='ok'; toast('Copie cloud reconstruite ✓'); }
+      catch(e2){ SYNC_STATE='err'; handleSyncError(e2,manual); }
+    } else { SYNC_STATE='err'; handleSyncError(e,manual); }
+  }
   finally{ SYNC_BUSY=false; paintSyncBadge(); }
 }
 /* Garde-fou : ne JAMAIS écraser un cloud fourni par un local vide ou très appauvri. */
 async function guardedPush(remote){
-  const localN=(state.entries||[]).length, remoteN=(remote.counts&&remote.counts.entries)|0;
-  if(localN===0&&remoteN>0){ divergenceSheet(remote,'empty'); return; }
-  if(remoteN>0&&localN<remoteN*0.5){ divergenceSheet(remote,'shrink'); return; }
+  /* On compare TOUTES les collections, pas seulement les pesées : un local vidé de ses
+     séances ou de ses prises ne doit pas écraser une copie cloud qui les contient. */
+  let localTotal=0,remoteTotal=0,shrink=false;
+  COLLECTIONS.forEach(c=>{
+    const l=(state[c.key]||[]).length, r=((remote.counts&&remote.counts[c.key])|0);
+    localTotal+=l; remoteTotal+=r;
+    if(r>=5&&l<r*0.5) shrink=true;
+  });
+  if(localTotal===0&&remoteTotal>0){ divergenceSheet(remote,'empty'); return; }
+  if(shrink||(remoteTotal>0&&localTotal<remoteTotal*0.5)){ divergenceSheet(remote,'shrink'); return; }
   await cloudPush();
 }
 function divergenceSheet(remote,mode){
@@ -5085,7 +5317,7 @@ function ringHTML(pct,opts){ opts=opts||{}; const size=opts.size||76,stroke=opts
     +'<circle class="ring-track" cx="'+size/2+'" cy="'+size/2+'" r="'+R+'" stroke-width="'+stroke+'"/>'
     +'<circle class="ring-fill" data-ring="'+pct+'" cx="'+size/2+'" cy="'+size/2+'" r="'+R+'" stroke-width="'+stroke+'" style="stroke:'+color+'"/></svg>'
     +(opts.center?'<div class="ring-center">'+opts.center+'</div>':'')+'</div>'; }
-function segHTML(opts,active,act,extraCls,extraData){ return '<div class="seg'+(extraCls||'')+'">'+opts.map(o=>
+function segHTML(opts,active,act,extraCls,extraData){ return '<div class="seg'+(extraCls?' '+extraCls:'')+'">'+opts.map(o=>
   '<button class="seg-opt'+(String(o[0])===String(active)?' is-active':'')+'" data-act="'+act+'" data-val="'+esc(o[0])+'"'+(extraData||'')+'>'+esc(o[1])+'</button>').join('')+'</div>'; }
 function chipsHTML(opts,active,act,extraData){ return '<div class="chip-row">'+opts.map(o=>
   '<button class="chip'+(String(o[0])===String(active)?' is-active':'')+'" data-act="'+act+'" data-val="'+esc(o[0])+'"'+(extraData||'')+'>'+(o[2]?o[2]+' ':'')+esc(o[1])+'</button>').join('')+'</div>'; }
@@ -5093,16 +5325,21 @@ function toggleHTML(label,on,act,dataAttrs,sub){ return '<div class="toggle"><di
   +(sub?'<div class="toggle-sub">'+esc(sub)+'</div>':'')+'</div>'
   +'<button class="switch'+(on?' on':'')+'" data-act="'+act+'"'+(dataAttrs||'')+' aria-label="'+esc(label)+'"></button></div>'; }
 function arrowHTML(){ return '<div class="row-arrow"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div>'; }
-function signCls(delta,better){ if(delta==null||delta===0) return '';
-  const good = better==='down' ? delta<0 : better==='up' ? delta>0 : null;
-  return good===null?'':(good?'down':'up'); }
+/* Une seule convention dans toute l'app : vert quand ça va dans le bon sens, GRIS sinon.
+   Jamais d'orange ni de rouge sur une variation du corps, sur aucun écran. */
+function signCls(delta,better){
+  if(delta==null||delta===0||(better!=='down'&&better!=='up')) return 'delta--flat';
+  return deltaClass(delta,better==='up'?1:-1);
+}
 
 /* ============================================================
    FEUILLES (SHEETS)
    ============================================================ */
 const sheetRoot=document.getElementById('sheet-root');
+let SHEET_CLOSE=null;
 function sheetOpen(){ return sheetRoot.classList.contains('open'); }
 function openSheet(title,bodyHTML,opts){ opts=opts||{};
+  SHEET_CLOSE=opts.onClose||null;
   sheetRoot.innerHTML='<div class="sheet-scrim" data-act="close-sheet"></div><div class="sheet"><div class="sheet-handle"></div>'
     +'<div class="sheet-head"><div class="sheet-title">'+esc(title)+'</div><button class="sheet-close" data-act="close-sheet">✕</button></div>'
     +'<div class="sheet-body">'+bodyHTML+'</div></div>';
@@ -5110,8 +5347,12 @@ function openSheet(title,bodyHTML,opts){ opts=opts||{};
   wireSheetDrag();
   if(opts.onOpen) opts.onOpen();
 }
-function closeSheet(){ sheetRoot.classList.remove('open'); sheetRoot.setAttribute('aria-hidden','true');
-  setTimeout(()=>{ if(!sheetRoot.classList.contains('open')) sheetRoot.innerHTML=''; },350); }
+function closeSheet(){
+  const cb=SHEET_CLOSE; SHEET_CLOSE=null;
+  sheetRoot.classList.remove('open'); sheetRoot.setAttribute('aria-hidden','true');
+  setTimeout(()=>{ if(!sheetRoot.classList.contains('open')) sheetRoot.innerHTML=''; },350);
+  if(cb) cb();
+}
 function refreshSheet(bodyHTML){ const b=q('.sheet-body',sheetRoot); if(b) b.innerHTML=bodyHTML; }
 function setSheetTitle(t){ const el=q('.sheet-title',sheetRoot); if(el) el.textContent=t; }
 function wireSheetDrag(){ const sheet=q('.sheet',sheetRoot); if(!sheet) return;
@@ -5121,11 +5362,13 @@ function wireSheetDrag(){ const sheet=q('.sheet',sheetRoot); if(!sheet) return;
   const end=()=>{ if(!drag) return; drag=false; sheet.style.transition=''; if(dy>110){ closeSheet(); } else { sheet.style.transform=''; } };
   grips.forEach(g=>{ if(!g) return; g.addEventListener('touchstart',start,{passive:true}); g.addEventListener('touchmove',move,{passive:true});
     g.addEventListener('touchend',end); g.addEventListener('touchcancel',end); }); }
-function confirmSheet(title,msg,onYes,danger,yesLabel){
+function confirmSheet(title,msg,onYes,danger,yesLabel,onNo){
   openSheet(title,'<p class="muted" style="margin:2px 0 18px;font-size:14.5px;line-height:1.5">'+esc(msg)+'</p>'
     +'<button class="btn '+(danger?'btn--danger':'btn--primary')+' btn--block" id="cfYes">'+esc(yesLabel||'Confirmer')+'</button>'
-    +'<button class="btn btn--ghost btn--block" data-act="close-sheet" style="margin-top:8px">Annuler</button>');
-  const b=document.getElementById('cfYes'); if(b) b.addEventListener('click',()=>{ closeSheet(); setTimeout(onYes,80); }); }
+    +'<button class="btn btn--ghost btn--block" data-act="close-sheet" style="margin-top:8px">Annuler</button>',
+    {onClose:onNo||null});
+  const b=document.getElementById('cfYes');
+  if(b) b.addEventListener('click',()=>{ SHEET_CLOSE=null; closeSheet(); setTimeout(onYes,80); }); }
 function markActive(el){ const row=el.parentElement; qa('.chip',row).forEach(c=>c.classList.remove('is-active')); el.classList.add('is-active'); }
 function segActivate(el){ const seg=el.parentElement; qa('.seg-opt',seg).forEach(c=>c.classList.remove('is-active')); el.classList.add('is-active'); }
 
@@ -5169,10 +5412,14 @@ function toast(msg,undoFn){ const root=document.getElementById('toast-root'); if
 const ACTIONS={
   'go':d=>nav(d.route),
   'close-sheet':()=>closeSheet(),
-  'go-metrics':()=>{ closeSheet(); nav('/metriques'); },
+  'go-metrics':()=>{ const d=WI&&WI.date; closeSheet(); WI_RETOUR=d||null; nav('/metriques'); },
+  'wi-resume':()=>{ const d=WI_RETOUR; WI_RETOUR=null; openWeighIn(d||isoToday()); },
 
   /* --- Saisie --- */
   'weigh-in':d=>openWeighIn(d&&d.date?d.date:isoToday()),
+  'quick-kcal':d=>openQuickMetric('kcalIn',(d&&d.date)||isoToday()),
+  'qm-day':d=>openQuickMetric(d.k,d.date),
+  'qm-save':d=>saveQuickMetric(d.k,d.date),
   'wi-day':d=>wiSetDate(addDayYMD(isoToday(),parseInt(d.d,10))),
   'wi-save':()=>saveWeighIn(),
   'wi-delete':()=>deleteWeighIn(),
@@ -5216,14 +5463,21 @@ const ACTIONS={
   'ch-metric':d=>{ CH().metric=d.m; saveNow(); render(); },
   'ch-unit':(d,el)=>{ state.settings.metricUnitPref[CH().metric]=el.dataset.val; saveNow(); render(); },
   'ch-toggle':d=>{ CH()[d.k]=!CH()[d.k]; saveNow(); render(); },
-  'ch-lag':(d,el)=>{ CH().lag=parseInt(d.val!=null?d.val:el.dataset.val,10)||0; saveNow(); render(); },
+  'ch-lag':(d,el)=>{ CH().lag=clamp(parseInt(d.val!=null?d.val:el.dataset.val,10)||2,1,XC_MAX_LAG); saveNow(); render(); },
   'hm-weigh':d=>openWeighIn(d.date),
   'hm-sport':d=>openSportDaySheet(d.date),
 
   /* --- Tableau --- */
   'tbl-toggle':d=>{ TBL()[d.k]=!TBL()[d.k]; saveNow(); render(); },
   'tbl-more':()=>{ TBL().limit+=200; render(); },
-  'tbl-row':d=>openWeighIn(d.date),
+  'tbl-row':d=>{ if(TBL().del) return; openWeighIn(d.date); },
+  'tbl-del':d=>{
+    const e=entryFor(d.date); if(!e) return;
+    const i=state.entries.indexOf(e);
+    confirmSheet('Supprimer la pesée','La pesée du '+fmtDateLong(d.date)+' sera supprimée. Continuer ?',()=>{
+      state.entries.splice(i,1); update();
+      toast('Pesée supprimée',()=>{ state.entries.splice(i,0,e); update(); });
+    },true,'Supprimer'); },
   'tbl-csv':()=>exportCSV(),
   'tbl-gap':d=>{
     const from=d.from,to=d.to, list=[];
@@ -5235,40 +5489,20 @@ const ACTIONS={
   /* --- Modules & réglages --- */
   'mod-on':d=>{ setModule(d.k,true); },
   'mod-toggle':(d,el)=>{ setModule(d.k,!state.settings.modules[d.k]); },
-  'metric-toggle':(d,el)=>{ state.settings.metrics[d.k]=!metricOn(d.k); el.classList.toggle('on'); saveNow(); },
-  'bone-unit':(d,el)=>{ state.settings.metricUnitPref.bone=el.dataset.val; state.settings.boneAsked=true; segActivate(el); saveNow(); },
-  'st-sex':(d,el)=>{ state.settings.profile.sex=el.dataset.val; segActivate(el); saveNow(); },
-  'st-accent':(d,el)=>{ state.settings.accentTheme=el.dataset.val; saveNow(); applyAccent(); render(); },
-  'st-first':(d,el)=>{ state.settings.firstScreen=el.dataset.val; segActivate(el); saveNow(); },
-  'st-density':(d,el)=>{ state.settings.density=el.dataset.val; saveNow(); applyPrefs(); render(); },
-  'st-kcalmode':(d,el)=>{ state.settings.sport.kcalMode=el.dataset.val; segActivate(el); saveNow(); },
-  'st-toggle':(d,el)=>{ const k=d.k;
-    if(k==='reduceMotion') state.settings.reduceMotion=state.settings.reduceMotion===true?null:true;
-    else state.settings[k]=!(state.settings[k]!==false&&k!=='numberPrivacy'?state.settings[k]!==false:state.settings[k]);
-    if(k==='numberPrivacy') state.settings.numberPrivacy=!state.settings.numberPrivacy;
-    if(k==='hapticsOn') state.settings.hapticsOn=!(state.settings.hapticsOn!==false);
-    if(k==='celebrateOn') state.settings.celebrateOn=!(state.settings.celebrateOn!==false);
-    saveNow(); applyPrefs(); render(); },
-  'st-save-profile':()=>{
-    const g=x=>{ const el=document.getElementById(x); return el?el.value:''; };
-    const p=state.settings.profile;
-    p.firstName=(g('stName')||'').trim()||null;
-    const hc=parseInt(g('stHeight'),10); if(hc>=120&&hc<=230) p.heightCm=hc;
-    const by=parseInt(g('stYear'),10); p.birthYear=(by>1900&&by<=new Date().getFullYear())?by:null;
-    update(); toast('Profil enregistré ✓'); },
-  'st-save-sport':()=>{
-    const g=x=>{ const el=document.getElementById(x); return el?el.value:''; };
-    state.settings.sport.weeklyGoalMin=Math.max(0,parseInt(g('stWgMin'),10)||0);
-    state.settings.sport.weeklyGoalSessions=Math.max(0,parseInt(g('stWgSes'),10)||0);
-    update(); toast('Objectifs enregistrés ✓'); },
-  'st-save-pill':()=>{
-    const P=state.settings.pillbox;
-    MOMENT_ORDER.filter(k=>k!=='peuimporte').forEach(k=>{ const el=document.getElementById('pt-'+k); if(el&&el.value) P.momentTimes[k]=el.value; });
-    Object.keys(MEAL_LABEL).forEach(k=>{ const el=document.getElementById('mt-'+k); if(el&&el.value) P.mealTimes[k]=el.value; });
-    const wt=document.getElementById('pwTime'); if(wt&&wt.value) P.defaultWorkoutTime=wt.value;
-    const wd=document.getElementById('pwDur'); if(wd) P.defaultSessionMin=clamp(parseInt(wd.value,10)||60,5,300);
-    update(); toast('Horaires enregistrés ✓'); },
-  'pillset-toggle':(d,el)=>{ state.settings.pillbox[d.k]=!state.settings.pillbox[d.k]; el.classList.toggle('on'); saveNow(); },
+  'metric-toggle':(d,el)=>{ state.settings.metrics[d.k]=!metricOn(d.k); el.classList.toggle('on'); touch(); invalidateCache(); save(); },
+  'bone-unit':(d,el)=>{ state.settings.metricUnitPref.bone=el.dataset.val; segActivate(el); touch(); invalidateCache(); save(); render(); },
+  'st-sex':(d,el)=>{ state.settings.profile.sex=el.dataset.val; segActivate(el); touch(); invalidateCache(); save(); },
+  'st-accent':(d,el)=>{ state.settings.accentTheme=el.dataset.val; touch(); save(); applyAccent(); render(); },
+  'st-first':(d,el)=>{ state.settings.firstScreen=el.dataset.val; segActivate(el); touch(); save(); },
+  'st-density':(d,el)=>{ state.settings.density=el.dataset.val; touch(); save(); applyPrefs(); render(); },
+  'st-kcalmode':(d,el)=>{ state.settings.sport.kcalMode=el.dataset.val; segActivate(el); touch(); save(); },
+  'st-toggle':d=>{
+    const s=state.settings, k=d.k;
+    if(k==='reduceMotion') s.reduceMotion=(s.reduceMotion===true)?null:true;   // null = suit le réglage du système
+    else if(k==='numberPrivacy') s.numberPrivacy=!s.numberPrivacy;             // défaut : éteint
+    else s[k]=(s[k]===false);                                                  // défaut : allumé (tout sauf false)
+    touch(); save(); applyPrefs(); render(); },
+  'pillset-toggle':(d,el)=>{ state.settings.pillbox[d.k]=!state.settings.pillbox[d.k]; el.classList.toggle('on'); touch(); save(); },
 
   /* --- Sport --- */
   'new-session':d=>openSessionSheet({date:(d&&d.date)||isoToday()}),
@@ -5287,7 +5521,10 @@ const ACTIONS={
     const i=document.getElementById('ssDate'); if(i) i.value=SS.date; ssRefreshDur(); },
   'sport-period':(d,el)=>{ const v=el.dataset.val; state.ui.sportPeriod=(v==='year')?'year':parseInt(v,10); saveNow(); render(); },
   'sport-month':d=>{ const cur=state.ui.sportMonth||monthKey(isoToday());
-    state.ui.sportMonth=monthKey(addMonthsYMD(cur+'-01',parseInt(d.d,10))); render(); },
+    const next=monthKey(addMonthsYMD(cur+'-01',parseInt(d.d,10)));
+    if(next>monthKey(isoToday())) return;                 // pas de calendrier dans le futur
+    state.ui.sportMonth=next; render(); },
+  'sport-month-today':()=>{ state.ui.sportMonth=null; render(); },
   'sport-day':d=>openSportDaySheet(d.date),
   'edit-weekly-goal':()=>weeklyGoalSheet(),
   'wg-preset':(d,el)=>{ const i=document.getElementById('wgMin'); if(i){ i.value=d.m; markActive(el); } },
@@ -5313,17 +5550,19 @@ const ACTIONS={
   'pf-every':(d,el)=>{ PF.everyNWeeks=parseInt(el.dataset.val,10)||1; segActivate(el); },
   'pf-save':()=>savePlan(),
   'pf-del':d=>deletePlan(d.id),
-  'plan-done':d=>{ const occ=planOccurrences(addDayYMD(isoToday(),-2),addDayYMD(isoToday(),1)).find(o=>o.key===d.key);
-    if(!occ){ setPlanOcc(d.key,'done',null); update(); return; }
+  'plan-done':d=>{
+    const day=String(d.key).split('|')[2]||isoToday();
+    const occ=planOccurrences(day,day).find(o=>o.key===d.key);
+    if(!occ){ setPlanOcc(d.key,'done',null); update(); toast('Noté — c’est fait ✓'); return; }
     openSessionSheet({date:occ.date,activityKey:occ.activityKey,durationMin:occ.durationMin,planKey:occ.key}); },
   'plan-skip':d=>{ setPlanOcc(d.key,'skipped',null); update();
     toast('Noté — pas cette fois',()=>{ clearPlanOcc(d.key); update(); }); },
 
   /* --- Pilulier --- */
   'pill-tab':d=>{ state.ui.pillTab=d.t; render(); },
-  'pill-day':d=>{ state.ui.pillDate=addDayYMD(pillCtxDate(),parseInt(d.d,10)); render(); },
+  'pill-day':d=>{ state.ui.pillDate=addDayYMD(pillCtxDate(),parseInt(d.d,10)); state.ui.pillDateSetOn=pillToday(); render(); },
   'pill-week':d=>{ state.ui.pillWeek=addDayYMD(state.ui.pillWeek||weekStartYMD(pillToday()),parseInt(d.d,10)); render(); },
-  'pill-goto-day':d=>{ state.ui.pillTab='jour'; state.ui.pillDate=d.date; render(); },
+  'pill-goto-day':d=>{ state.ui.pillTab='jour'; state.ui.pillDate=d.date; state.ui.pillDateSetOn=pillToday(); render(); },
   'pill-open':d=>{ const s=pillSlotByKey(d.key); if(s) pillTakeSheet(s); },
   'pill-take':d=>{ const s=pillSlotByKey(d.key); if(s) pillTake(s,{}); },
   'pill-skip':d=>{ const key=d.key||(PILL_TAKE&&PILL_TAKE.key); const s=pillSlotByKey(key); if(s){ closeSheet(); pillSkip(s); } },
@@ -5372,17 +5611,20 @@ const ACTIONS={
     +'<button class="btn btn--primary btn--block" data-act="bk-parse-paste">Analyser</button>'),
   'bk-parse-paste':()=>{ const el=document.getElementById('pasteArea'); if(!el) return;
     const r=parseBackup(el.value); if(r.error){ toast(r.error); return; } showImportPreview(r); },
+  'imp-settings':(d,el)=>el.classList.toggle('on'),
   'bk-do-import':d=>{ if(!IMPORT_STAGE) return;
     const data=IMPORT_STAGE.data;
+    const sw=document.getElementById('impSettings');
+    const withSettings=!!(sw&&sw.classList.contains('on'));
     if(d.mode==='replace'){ closeSheet(); confirmSheet('Tout remplacer',
       'Toutes tes données actuelles seront remplacées. Un filet de sécurité est gardé sur cet appareil. Continuer ?',
-      ()=>applyImport(data,'replace'),true,'Tout remplacer'); }
-    else applyImport(data,'merge'); },
+      ()=>applyImport(data,'replace',true),true,'Tout remplacer'); }
+    else applyImport(data,'merge',withSettings); },
   'bk-restore':d=>restoreFrom(d.key),
   'bk-phone-guide':()=>openSheet('Je change de téléphone',phoneGuideHTML()),
   'bk-wipe':()=>confirmSheet('Tout effacer',
     'Toutes tes données seront supprimées de cet appareil. Un filet de sécurité est gardé, mais la seule vraie protection est une sauvegarde exportée. Continuer ?',
-    ()=>{ snapshotPrev('avant effacement total'); state=migrate(defaultDB()); invalidateCache(); saveNow(); nav('/'); render(); toast('Tout a été effacé'); },true,'Tout effacer'),
+    ()=>{ snapshotPrev('avant effacement total'); LOAD_ERROR=null; state=migrate(defaultDB()); invalidateCache(); saveNow(); nav('/'); render(); toast('Tout a été effacé'); },true,'Tout effacer'),
   'sync-setup':()=>openSheet('Sauvegarde cloud',syncSetupHTML()),
   'sync-save-token':()=>saveTokenAndInit(),
   'sync-now':()=>syncNow(true),
@@ -5402,8 +5644,20 @@ const ACTIONS={
     try{
       if(d.how==='merge'){ snapshotPrev('avant fusion cloud');
         COLLECTIONS.forEach(c=>{ state[c.key]=mergeCollection(c,state[c.key]||[],r.data[c.key]||[]); });
+        const rui=r.data.ui||{};
+        state.ui.skippedDays=Object.assign({},state.ui.skippedDays||{},rui.skippedDays||{});
         state=migrate(state); touch(); invalidateCache(); saveNow(); await cloudPush(); render(); toast('Fusionné et synchronisé ✓'); }
-      else if(d.how==='local'){ touch(); await cloudPush(); toast('Cloud mis à jour depuis cet iPhone ✓'); }
+      else if(d.how==='local'){
+        const localN=(state.entries||[]).length, remoteN=((r.counts&&r.counts.entries)|0);
+        if(remoteN>0&&localN<remoteN){
+          confirmSheet('Remplacer la copie cloud',
+            'La copie cloud contient '+remoteN+' '+plural(remoteN,'pesée')+', cet iPhone en a '+localN+'. Elle sera remplacée par celle-ci. Continuer ?',
+            async()=>{ try{ touch(); await cloudPush(); toast('Cloud mis à jour depuis cet iPhone ✓'); }catch(e2){ handleSyncError(e2,true); } },
+            true,'Remplacer');
+          return;
+        }
+        touch(); await cloudPush(); toast('Cloud mis à jour depuis cet iPhone ✓');
+      }
       else if(d.how==='cloud'){ await cloudPull(r); toast('Version cloud restaurée ✓'); }
     }catch(e){ handleSyncError(e,true); } },
 
@@ -5425,17 +5679,50 @@ const ACTIONS={
     toast('Bienvenue ! Première pesée enregistrée 🌱'); }
 };
 function setModule(k,on){
+  const avaitPlanning=!!state.settings.modules.planning;
   state.settings.modules[k]=!!on;
   if(k==='sport'&&on&&!state.settings.sport.startedAt) state.settings.sport.startedAt=isoToday();
-  if(k==='planning'&&on){ state.settings.modules.sport=true; state.settings.planning.floorDate=isoToday(); }
-  if(k==='pillbox'&&on) state.settings.pillbox.floorDate=isoToday();
-  if(k==='sport'&&!on) state.settings.modules.planning=false;
+  if(k==='planning'&&on){ state.settings.modules.sport=true; if(!state.settings.planning.floorDate) state.settings.planning.floorDate=isoToday(); }
+  if(k==='pillbox'&&on&&!state.settings.pillbox.floorDate) state.settings.pillbox.floorDate=isoToday();
+  /* Les prévisions font partie du module Sport : elles se mettent en pause avec lui
+     et reviennent telles quelles quand il revient. */
+  if(k==='sport'&&!on){ state.settings.planningPaused=avaitPlanning; state.settings.modules.planning=false; }
+  if(k==='sport'&&on&&state.settings.planningPaused){ state.settings.modules.planning=true; state.settings.planningPaused=false; }
   update();
-  toast(on?'Module activé ✓':'Module désactivé — tes données sont conservées');
+  if(k==='sport'&&!on&&avaitPlanning) toast('Sport désactivé — les prévisions d’entraînement le sont aussi. Tes données sont conservées.');
+  else toast(on?'Module activé ✓':'Module désactivé — tes données sont conservées');
 }
 
 /* ---------- Listeners globaux ---------- */
+/* Un réglage porteur de `data-set` s'écrit tout seul quand on quitte le champ.
+   Plus de bouton « Enregistrer » à ne pas oublier — donc plus de réglage perdu. */
+function applySettingInput(el){
+  const path=el.dataset.set; if(!path) return;
+  const type=el.dataset.type||'text';
+  let v=el.value;
+  if(type==='int'||type==='num'){
+    v=(type==='int')?parseInt(String(v).replace(/\s/g,''),10):parseNum(v);
+    if(!isFinite(v)) v=null;
+    if(v!=null){
+      const mn=el.dataset.min!=null?parseFloat(el.dataset.min):null;
+      const mx=el.dataset.max!=null?parseFloat(el.dataset.max):null;
+      if(mn!=null&&v<mn) v=mn;
+      if(mx!=null&&v>mx) v=mx;
+      if(String(v)!==String(el.value).replace(/\s/g,'')) el.value=v;   // on montre la valeur retenue
+    }
+  } else if(type==='time'){ v=/^\d{1,2}:\d{2}$/.test(v)?v:null; }
+  else { v=String(v).trim()||null; }
+  const parts=path.split('.');
+  let o=state.settings;
+  for(let i=0;i<parts.length-1;i++){ if(!o[parts[i]]||typeof o[parts[i]]!=='object') o[parts[i]]={}; o=o[parts[i]]; }
+  const last=parts[parts.length-1];
+  if(v==null&&(type==='time'||el.dataset.keep==='1')) return;           // une heure vide ne doit rien casser
+  o[last]=v;
+  touch(); invalidateCache(); save();
+  if(el.dataset.rerender==='1') render();
+}
 function onChange(e){
+  if(e.target&&e.target.dataset&&e.target.dataset.set){ applySettingInput(e.target); return; }
   const id=e.target.id;
   if(id==='wiDate'&&WI){ wiSetDate(e.target.value); return; }
   if(id==='tblRange'){ TBL().range=e.target.value; TBL().limit=TBL_PAGE; saveNow(); render(); return; }
@@ -5485,7 +5772,23 @@ function onAppOpen(){
   autoBackupTick();
   try{ if(navigator.storage&&navigator.storage.persist&&weighIns().length>=3) navigator.storage.persist(); }catch(e){}
   saveNow();
-  setTimeout(()=>{ pillBootNudge(); planBootNudge(); },900);
+}
+/* Un seul rappel par jour, et seulement s'il apporte quelque chose que l'écran ne dit pas déjà. */
+function bootNudge(){
+  if(currentRoute()==='/') return;
+  if(state.ui.lastNudgeDate===isoToday()) return;
+  let msg=null;
+  const late=pillLateToday();
+  if(late.length===1) msg='⏰ '+late[0].product.name+' — prévu '+late[0].timeLabel;
+  else if(late.length>1) msg='⏰ '+late.length+' prises en retard aujourd’hui';
+  if(!msg&&state.settings.modules.planning&&state.settings.planning.remindOnBoot){
+    const p=plannedToday().filter(o=>o.status==='undecided');
+    if(p.length) msg='📅 Aujourd’hui : '+p[0].label+(p[0].time?' à '+p[0].time:'');
+  }
+  if(!msg&&!hasWeightToday()&&weighIns().length>=3) msg='⚖️ Pas encore pesé aujourd’hui';
+  if(!msg) return;
+  state.ui.lastNudgeDate=isoToday(); saveNow();
+  toast(msg);
 }
 function onAppForeground(){
   invalidateCache();
@@ -5493,18 +5796,10 @@ function onAppForeground(){
   render();
 }
 function autoBackupTick(){
+  if(LOAD_ERROR) return;
   dailySnapshot();
   if(syncOn()) syncNow(false);
 }
-function planBootNudge(){
-  if(!state.settings.modules.planning||!state.settings.planning.remindOnBoot) return;
-  if(state.ui.lastPlanNudgeDate===isoToday()) return;
-  const p=plannedToday().filter(o=>o.status==='undecided');
-  if(!p.length) return;
-  state.ui.lastPlanNudgeDate=isoToday(); saveNow();
-  toast('📅 Aujourd’hui : '+p[0].label+(p[0].time?' à '+p[0].time:''));
-}
-
 /* @@SECTION:ACTIONS@@ */
 
 /* ============================================================
@@ -5536,7 +5831,7 @@ function updateTabs(r){
   if(pill&&activeEl&&bar){ const a=activeEl.getBoundingClientRect(),b=bar.getBoundingClientRect();
     if(a.width) pill.style.transform='translateX('+(a.left-b.left+a.width/2-17)+'px)'; }
   const fabEl=document.getElementById('fab');
-  if(fabEl) fabEl.classList.toggle('is-done', !!entryFor(isoToday()));
+  if(fabEl) fabEl.classList.toggle('is-done', hasWeightToday());   // « fait » = pesé, pas juste une ligne créée
 }
 
 let BOOTED=false, HIDDEN_AT=0, LAST_W=0;
@@ -5563,6 +5858,10 @@ function boot(){
   render();
   onAppOpen();
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('./sw.js').catch(()=>{}); }
+  /* iOS n'autorise aucune notification programmée depuis une PWA : le seul rappel possible
+     est celui de l'ouverture. On n'en montre donc qu'UN SEUL, le plus actionnable, et
+     jamais sur l'accueil — où les cartes disent déjà tout, et de façon permanente. */
+  setTimeout(bootNudge,900);
 }
 function safeBoot(){ if(BOOTED) return; BOOTED=true; state=load(); boot(); }
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',safeBoot); else safeBoot();

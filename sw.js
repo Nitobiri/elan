@@ -1,5 +1,5 @@
 /* Élan — Service Worker (offline cache-first pour la coquille de l'app) */
-const CACHE = 'elan-v2';
+const CACHE = 'elan-v3';
 const CORE = [
   './',
   './index.html',

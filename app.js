@@ -100,13 +100,14 @@ function defaultDB(){
   return {
     schemaVersion:CURRENT_SCHEMA,
     settings:{
-      profile:{ firstName:null, sex:'m', heightCm:182, birthYear:null },
+      profile:{ firstName:null, sex:'m', heightCm:182, birthYear:null, job:'bureau' },
+      tabs:['/','/courbes','/tableau','/plus'],
       goal:{ weightKg:null, date:null, fatPct:null, mode:'lose', maintainBandKg:1.5 },
       startOverride:null,                 // {date, weightKg} pour figer soi-même son point de départ
       heroMode:'raw',                     // 'raw' = le chiffre de la balance, 'trend' = la tendance lissée
       sparkDays:60,
       metrics:{ weight:true, fat:true, water:true, muscle:true, bone:true, kcalOut:true,
-                lean:false, protein:false, visceral:false, bmr:false, metaAge:false,
+                lean:false, protein:false, protIn:false, visceral:false, bmr:false, metaAge:false,
                 waist:false, hips:false, chest:false, arm:false, thigh:false, neck:false,
                 steps:false, sleep:false, mood:false },
       modules:{ sport:false, kcalIn:false, pillbox:false, planning:false },
@@ -129,7 +130,7 @@ function defaultDB(){
          backupSnoozeUntil:null, pillCelebratedOn:null, lastActivityKey:null, 
          etaShown:null, sportPeriod:7, sportMonth:null, pillTab:'jour', pillDate:null, pillWeek:null,
          analyseTab:'progression' },
-    meta:{ appVersion:'1.0', deviceId:null, deviceName:'', rev:0, updatedAt:null, createdAt:today,
+    meta:{ appVersion:'1.2', deviceId:null, deviceName:'', rev:0, updatedAt:null, createdAt:today,
            lastBackupAt:null, lastCloudAt:null, lastSnapAt:null, lastOpenAt:null, openCount:0 },
     entries:[], sessions:[], activities:[], plans:[], planOccs:[],
     meds:[], medGroups:[], medSchedules:[], medIntakes:[], motivations:[], milestones:[]
@@ -142,6 +143,7 @@ function migrate(db){
   db.settings=deepDefaults(db.settings,d.settings);
   db.ui=deepDefaults(db.ui,d.ui);
   db.meta=Object.assign({},d.meta,db.meta||{});
+  db.meta.appVersion=d.meta.appVersion;      // la version vient du code, jamais de la sauvegarde
   COLLECTIONS.forEach(c=>{ if(!Array.isArray(db[c.key])) db[c.key]=[]; });
   if(!db.activities.length) db.activities=seedActivities();
   if(!db.meta.deviceId) db.meta.deviceId=uid();
@@ -316,6 +318,7 @@ const METRICS={
   protein: {key:'protein',label:'Protéines',          short:'Prot.',  emoji:'🥚', kind:'comp',   defUnit:'pct', dec:1, decKg:2, better:'up',   color:'#39D3A0',         min:5,   max:35, minKg:2,  maxKg:60,  group:'compo'},
   kcalOut: {key:'kcalOut',label:'Dépense (balance)',  short:'Dépense',emoji:'🔋', kind:'scalar', unit:'kcal', dec:0, better:'flat', color:'var(--m-cal)',    min:800, max:8000},
   kcalIn : {key:'kcalIn', label:'Calories mangées',   short:'Mangé',  emoji:'🍽️', kind:'scalar', unit:'kcal', dec:0, better:'flat', color:'#F0A93B',         min:0,   max:10000, module:'kcalIn'},
+  protIn : {key:'protIn', label:'Protéines mangées',  short:'Protéines',emoji:'🥩', kind:'scalar', unit:'g',    dec:0, better:'up',   color:'#39D3A0',         min:0,   max:500},
   visceral:{key:'visceral',label:'Graisse viscérale', short:'Viscé.', emoji:'🎯', kind:'scalar', unit:'',     dec:0, better:'down', color:'#FB7185',         min:1,   max:60},
   bmr    : {key:'bmr',    label:'Métabolisme de base',short:'MB',     emoji:'⚙️', kind:'scalar', unit:'kcal', dec:0, better:'up',   color:'#8AB4F8',         min:800, max:4000},
   metaAge: {key:'metaAge',label:'Âge métabolique',    short:'Âge mét.',emoji:'⏳',kind:'scalar', unit:'ans',  dec:0, better:'down', color:'#A7B2C4',         min:10,  max:99},
@@ -334,7 +337,7 @@ const METRICS={
   sport  : {key:'sport',  label:'Sport',              short:'Sport',  emoji:'🏃', kind:'derived',unit:'min',  dec:0, better:'up',   color:'var(--m-sport)', module:'sport'}
 };
 /* Ordre d'affichage à la saisie et dans le tableau. */
-const METRIC_ORDER=['weight','fat','water','muscle','bone','protein','kcalOut','kcalIn','visceral','bmr','metaAge',
+const METRIC_ORDER=['weight','fat','water','muscle','bone','protein','kcalOut','kcalIn','protIn','visceral','bmr','metaAge',
   'waist','hips','chest','arm','thigh','neck','steps','sleep','mood'];
 const COMP_KEYS=METRIC_ORDER.filter(k=>METRICS[k].kind==='comp');
 
@@ -808,6 +811,17 @@ const PAL=[
   {code:'act',f:1.725,label:'Très actif',        hint:'5 à 6 séances par semaine'},
   {code:'ext',f:1.90, label:'Extrêmement actif', hint:'métier physique + sport quotidien'}];
 function palOf(code){ return PAL.find(x=>x.code===code)||PAL[1]; }
+/* Le métier pèse plus lourd que le sport dans une journée : huit heures debout brûlent
+   davantage que trois séances par semaine. C'est la base (NEAT) sur laquelle on ajoute
+   les séances, au lieu de tout déduire du seul sport. */
+const JOBS=[
+  {code:'bureau',  f:1.20, emoji:'🪑', label:'Bureau, assis',      hint:'ordinateur, peu de marche'},
+  {code:'mixte',   f:1.30, emoji:'🚶', label:'Assis et debout',    hint:'bureau + déplacements'},
+  {code:'debout',  f:1.40, emoji:'🧍', label:'Debout la journée',  hint:'commerce, atelier, enseignement'},
+  {code:'marche',  f:1.50, emoji:'🏃', label:'Beaucoup de marche', hint:'soignant, serveur, livraison'},
+  {code:'physique',f:1.62, emoji:'🧱', label:'Métier physique',    hint:'BTP, manutention, charges lourdes'}];
+function jobOf(code){ return JOBS.find(x=>x.code===code)||JOBS[0]; }
+function currentJob(){ return jobOf(state.settings.profile.job||'bureau'); }
 function autoPal(sessPerWeek){
   if(sessPerWeek<1) return 'sed';
   if(sessPerWeek<2.5) return 'leg';
@@ -821,29 +835,140 @@ function sessionsPerWeek(days){
   const n=(state.sessions||[]).filter(s=>s.date>=from).length;
   return n/(days/7);
 }
+/* Calories de sport lissées sur la journée. On les recalcule toujours par le MET :
+   l'utilisateur peut avoir masqué l'affichage des kcal, ça ne change pas sa dépense. */
+function sportKcalPerDay(days){
+  if(!state.settings.modules.sport) return 0;
+  days=days||28; const from=addDayYMD(isoToday(),-(days-1));
+  let tot=0;
+  (state.sessions||[]).forEach(s=>{ if(s.date<from) return;
+    tot+=(s.kcalSource==='manual'&&s.kcal!=null)?s.kcal:estimateKcal(s.activityKey,s.durationMin,s.intensity,s.date).kcal; });
+  return tot/days;
+}
 function currentPal(){
   const s=state.settings.energy;
   /* En automatique sans module Sport, on ne peut rien déduire : on retombe sur le réglage manuel. */
   if(s.palMode==='auto'&&state.settings.modules.sport) return autoPal(sessionsPerWeek(28));
   return s.pal||'leg';
 }
+/* Facteur d'activité détaillé : base du métier + apport réel des séances.
+   En mode manuel, on respecte le choix de l'utilisateur sans rien y ajouter. */
+function activityFactor(kg){
+  const s=state.settings.energy;
+  const bmr=bmrMifflin(kg!=null?kg:refWeight().kg,state.settings.profile.heightCm,profileAge(),state.settings.profile.sex);
+  if(s.palMode!=='auto'){ const p=palOf(s.pal||'leg');
+    return {f:p.f,base:p.f,sport:0,bmr:bmr,job:null,manual:true,label:p.label}; }
+  const job=currentJob();
+  const sport=(bmr&&bmr>0)?Math.min(0.45,sportKcalPerDay(28)/bmr):0;
+  const f=Math.round((job.f+sport)*1000)/1000;
+  return {f:f,base:job.f,sport:Math.round(sport*1000)/1000,bmr:bmr,job:job,manual:false,
+    label:job.label+(sport>=0.02?' + tes séances':'')};
+}
 function tdeeTheo(){
   const ref=refWeight().kg; if(ref==null) return null;
-  const bmr=bmrMifflin(ref,state.settings.profile.heightCm,profileAge(),state.settings.profile.sex);
-  return bmr==null?null:bmr*palOf(currentPal()).f;
+  const a=activityFactor(ref);
+  return a.bmr==null?null:Math.round(a.bmr*a.f);
+}
+/* Protéines : le seul macro qui change vraiment quelque chose en déficit.
+   1,6 g par kilo de poids de FORME (et non de poids actuel : les kilos de graisse
+   n'ont pas besoin d'être nourris). On borne pour rester raisonnable. */
+const PROT_PER_KG=1.6;
+function proteinTarget(){
+  const tg=targetWeight(), cur=refWeight().kg;
+  if(cur==null) return null;
+  /* Poids de référence : l'objectif s'il est crédible, sinon la masse maigre + 15 %,
+     sinon le poids actuel plafonné — un homme de 110 kg n'a pas besoin de 176 g. */
+  let base=null;
+  const e=lastWeighIn(), f=e?metricValue(e,'fat','kg'):null;
+  if(f&&f.value!=null&&cur-f.value>20) base=(cur-f.value)*1.20;
+  if(tg!=null&&tg<cur) base=base!=null?Math.min(base,tg):tg;
+  if(base==null) base=cur*0.85;
+  const g=Math.round(clamp(base*PROT_PER_KG,50,260)/5)*5;
+  return {g:g,basisKg:Math.round(base),perKg:PROT_PER_KG};
+}
+function proteinStats(days){
+  days=days||14;
+  const from=addDayYMD(isoToday(),-(days-1));
+  const vals=[]; state.entries.forEach(e=>{ if(e.date<from) return;
+    const v=mv(e,'protIn'); if(v!=null) vals.push(v); });
+  const t=proteinTarget();
+  if(!vals.length||!t) return {ok:false,target:t,n:0};
+  const moy=meanOf(vals);
+  return {ok:true,target:t,n:vals.length,mean:Math.round(moy),
+    hit:vals.filter(v=>v>=t.g*0.9).length,pct:Math.round(Math.min(1.4,moy/t.g)*100)};
+}
+
+/* Le point neutre : le nombre de calories où ton poids ne bouge plus.
+   On préfère TOUJOURS l'observé (mesuré sur toi) à la formule (moyenne de population). */
+function maintenanceKcal(){
+  const obs=tdeeObserved();
+  if(obs.ok) return {kcal:obs.kcal,source:'observé',solid:!!obs.solid,jeune:!!obs.jeune,
+    why:'calculé sur tes '+obs.n+' journées de calories et ta perte réelle'
+      +(obs.jeune?', prudemment revu à la baisse : sur un début de suivi, une partie de la perte est de l’eau':'')};
+  const th=tdeeTheo();
+  if(th==null) return {kcal:null,source:null,solid:false,why:'profil incomplet'};
+  const a=activityFactor();
+  return {kcal:Math.round(th/10)*10,source:'estimé',solid:false,
+    why:'formule Mifflin-St Jeor × '+nf(a.f,2)+(a.job?' ('+a.job.label.toLowerCase()+')':'')};
+}
+/* Simulation jour par jour. Le métabolisme baisse avec le poids : projeter en ligne
+   droite promet des dates qu'on ne tiendra pas. Ici, on recalcule chaque matin. */
+function simulate(intakeKcal,opt){
+  opt=opt||{};
+  const cm=state.settings.profile.heightCm, age=profileAge(), sex=state.settings.profile.sex;
+  let w=opt.startKg!=null?opt.startKg:refWeight().kg;
+  if(w==null||!cm||intakeKcal==null) return {ok:false};
+  const a=activityFactor(w);
+  /* Si on connaît le point neutre observé, on cale le facteur dessus : c'est LA réalité
+     de cet utilisateur, formule ou pas. */
+  let f=a.f;
+  const obs=opt.useObserved===false?{ok:false}:tdeeObserved();
+  if(obs.ok){ const b0=bmrMifflin(w,cm,age,sex); if(b0>0) f=obs.kcal/b0; }
+  const target=opt.targetKg!=null?opt.targetKg:targetWeight();
+  const days=opt.days||1825;                     // cinq ans : à -250 kcal/jour, deux ans ne suffisent pas
+  const down=target!=null?(target<w):true;
+  const series=[{date:isoToday(),v:Math.round(w*100)/100}];
+  let hit=null;
+  for(let d=1;d<=days;d++){
+    const bmr=bmrMifflin(w,cm,age,sex);
+    const tdee=bmr*f;
+    w+=(intakeKcal-tdee)/KCAL_PER_KG_FAT;
+    if(w<35||w>350) break;
+    series.push({date:addDayYMD(isoToday(),d),v:Math.round(w*100)/100});   // pas quotidien : aucun trou dans la courbe
+    if(hit===null&&target!=null&&(down?w<=target:w>=target)){ hit=d; break; }   // arrivé : on n'extrapole pas au-delà
+  }
+  const bmr0=bmrMifflin(opt.startKg!=null?opt.startKg:refWeight().kg,cm,age,sex);
+  const tdee0=Math.round(bmr0*f);
+  const at=n=>{ const dd=addDayYMD(isoToday(),n); let best=series[0];
+    series.forEach(p=>{ if(p.date<=dd) best=p; }); return best.v; };
+  return {ok:true,f:f,tdee0:tdee0,intake:intakeKcal,gapDay:Math.round(intakeKcal-tdee0),
+    kgWeek:Math.round(((intakeKcal-tdee0)/KCAL_PER_KG_FAT)*7*1000)/1000,
+    series:series,etaDays:hit,etaDate:hit!=null?addDayYMD(isoToday(),hit):null,
+    target:target,w30:at(30),w90:at(90),w180:at(180),w365:at(365),
+    endKg:series[series.length-1].v,source:obs.ok?'observé':'estimé'};
 }
 /* Dépense OBSERVÉE : ce que tu manges + ce que tu perds. Un calcul indirect,
    mais infiniment plus juste que l'estimation d'une balance. */
+const TDEE_MIN_DAYS=14, TDEE_SOLID_DAYS=20;
 function tdeeObserved(){
   const W=28;
   const K=windowOf(seriesOf(PICK_KIN),isoToday(),W);
   const Wt=windowOf(serieW(),isoToday(),W);
-  if(K.length<20||Wt.length<12) return {ok:false,reason:'pas assez de jours renseignés',nK:K.length,nW:Wt.length};
+  if(K.length<TDEE_MIN_DAYS||Wt.length<10) return {ok:false,reason:'pas assez de jours renseignés',nK:K.length,nW:Wt.length};
   const t=trendRate(W); if(!t.ok) return {ok:false,reason:'tendance indisponible'};
   const intake=meanOf(K.map(p=>p.v));
-  const kcal=intake+KCAL_PER_KG_FAT*(-t.kgDay);
+  let kcal=intake+KCAL_PER_KG_FAT*(-t.kgDay);
   if(kcal<1200||kcal>6000) return {ok:false,reason:'résultat hors bornes'};
-  return {ok:true,kcal:Math.round(kcal/50)*50,intake:Math.round(intake),kgWeek:t.kgWeek,n:K.length,days:W};
+  /* Les trois premières semaines, une bonne part de la perte est de l'eau et du glycogène :
+     le calcul indirect surestime alors la dépense. On plafonne à +25 % de la formule
+     plutôt que d'annoncer un chiffre flatteur qui sera démenti le mois suivant. */
+  const dStart=sinceStartDays();
+  const jeune=dStart!=null&&dStart<28;
+  const th=tdeeTheo();
+  let plafonne=false;
+  if(jeune&&th!=null&&kcal>th*1.25){ kcal=th*1.25; plafonne=true; }
+  return {ok:true,kcal:Math.round(kcal/50)*50,intake:Math.round(intake),kgWeek:t.kgWeek,
+    n:K.length,days:W,solid:K.length>=TDEE_SOLID_DAYS&&!jeune,jeune:jeune,plafonne:plafonne};
 }
 function energyBalance(){
   const W=28;
@@ -861,7 +986,14 @@ function energyBalance(){
 }
 
 /* ---------- Calories mangées → poids, avec décalage ---------- */
-const XC_MAX_LAG=5, XC_MIN_N=30, XC_HINT_N=20, XC_SCAN_PENALTY=1.25;
+const XC_MAX_LAG=5, XC_MIN_N=30, XC_HINT_N=8, XC_SCAN_PENALTY=1.25;
+/* Trois niveaux de confiance plutôt qu'un mur : à 8 journées on montre quelque chose
+   en le disant fragile, à 30 on l'affirme. Ne rien afficher pendant un mois décourage
+   exactement les gens qui viennent de commencer à noter leurs calories. */
+function xcTier(x){ if(!x||x.n==null) return 'aucun';
+  if(x.n>=XC_MIN_N&&x.r>=x.crit) return 'solide';
+  if(x.n>=15) return 'piste';
+  return 'ebauche'; }
 /* On teste les décalages à partir de 1 : la pesée du matin précède les repas de la
    journée, un décalage 0 comparerait un effet à une cause postérieure. */
 function crossCorrIntakeWeight(maxLag){
@@ -883,9 +1015,9 @@ function crossCorrIntakeWeight(maxLag){
   }
   const valid=res.filter(x=>x.r!=null&&x.n>=XC_HINT_N);
   if(!valid.length) return {ok:false,reason:'pas assez de jours avec calories ET pesées',all:res,
-    n:Math.max.apply(null,res.map(x=>x.n).concat([0])),need:XC_MIN_N};
+    n:Math.max.apply(null,res.map(x=>x.n).concat([0])),need:XC_HINT_N};
   let best=valid[0]; for(const x of valid) if(x.r>best.r) best=x;
-  return {ok:true,best:best,all:res,solid:best.n>=XC_MIN_N&&best.r>=best.crit};
+  return {ok:true,best:best,all:res,tier:xcTier(best),solid:best.n>=XC_MIN_N&&best.r>=best.crit};
 }
 
 /* ---------- Effet du sport ---------- */
@@ -1084,7 +1216,7 @@ function milestoneDefs(){
     const w0=startWeight(), tg=targetWeight(), L=[];
     const push=(code,kind,th,label,emoji,why,bmi)=>L.push({code:code,kind:kind,th:th,label:label,emoji:emoji,why:why||null,bmi:bmi||null});
     if(w0!=null){
-      [1,2.5,5,7.5,10,15,20,25,30,40,50].forEach(k=>{
+      [1,2,2.5,3,5,7.5,10,12.5,15,17.5,20,25,30,35,40,45,50].forEach(k=>{
         if(tg==null||w0-k>=tg-0.001) push('lost'+String(k).replace('.','_'),'lost',k,MINUS+nf(k,1)+' kg au compteur','🔻'); });
       const floor=(tg!=null)?Math.floor(tg/5)*5:Math.max(50,Math.floor(w0/5)*5-15);
       for(let w=Math.floor(w0/5)*5; w>=floor; w-=5){
@@ -1093,35 +1225,82 @@ function milestoneDefs(){
       }
       [35,30,27,25].forEach(b=>{ const wt=weightForBmi(b);
         if(wt!=null&&wt<w0) push('bmi'+b,'under',Math.round(wt*10)/10,'IMC sous '+b,'📉','soit '+fmtKg(wt),b); });
-      if(metricOn('fat')) [1,2,3,5,8,10,15].forEach(k=>push('fat'+k,'fatlost',k,MINUS+nf(k,1)+' kg de masse grasse','🫀'));
+      /* Deux paliers « miroir » qui parlent plus qu'un chiffre rond. */
+      [10,20,25].forEach(pc=>{ const k=Math.round(w0*pc/100*10)/10;
+        if(tg==null||w0-k>=tg-0.001) push('rel'+pc,'lost',k,pc+' % de ton poids de départ','🪞','soit '+fmtKg(k)); });
+      if(metricOn('fat')){
+        [1,2,3,5,7.5,10,12.5,15,20].forEach(k=>push('fat'+String(k).replace('.','_'),'fatlost',k,MINUS+nf(k,1)+' kg de masse grasse','🫀'));
+        [35,32,30,28,25,22,20,18,15].forEach(pc=>push('fatp'+pc,'fatunder',pc,'Masse grasse sous '+pc+' %','📐'));
+      }
     }
-    [10,25,50,75,90].forEach(p=>push('pct'+p,'pct',p,p+' % du chemin','🧭'));
-    [7,14,30,60,100,200,365].forEach(d=>push('streak'+d,'streak',d,d+' jours de suite','🔥'));
-    [50,100,250,500].forEach(n=>push('count'+n,'count',n,n+' pesées enregistrées','📔'));
+    [10,25,33,50,66,75,90].forEach(p=>push('pct'+p,'pct',p,p+' % du chemin','🧭'));
+    [3,7,14,21,30,60,100,150,200,300,365].forEach(d=>push('streak'+d,'streak',d,d+' jours de suite','🔥'));
+    [10,25,50,100,150,250,365,500].forEach(n=>push('count'+n,'count',n,n+' pesées enregistrées','📔'));
+    [2,4,8,12,26,52,104].forEach(w=>push('weeks'+w,'weeks',w,w+' '+plural(w,'semaine')+' de suivi','📆'));
+    if((state.motivations||[]).length) [1,3,5].forEach(n=>push('why'+n,'motivations',n,n===1?'Une raison écrite':n+' raisons écrites','💭'));
     if(state.settings.modules.sport){
-      [10,25,50,100,200].forEach(n=>push('sess'+n,'sessions',n,n+' séances de sport','🏋️'));
-      [10,25,50,100].forEach(h=>push('hrs'+h,'sporthours',h,h+' h d’entraînement','⏱️'));
+      [1,5,10,25,50,100,150,200,300].forEach(n=>push('sess'+n,'sessions',n,n===1?'Première séance notée':n+' séances de sport','🏋️'));
+      [5,10,25,50,100,200].forEach(h=>push('hrs'+h,'sporthours',h,h+' h d’entraînement','⏱️'));
+      [4,8,12,26,52].forEach(w=>push('spw'+w,'sportweeks',w,w+' '+plural(w,'semaine')+' d’affilée avec du sport','🔗'));
+      [3,5,8].forEach(n=>push('acts'+n,'activities',n,n+' activités différentes essayées','🎨'));
+      [5000,15000,50000,100000].forEach(k=>push('skc'+k,'sportkcal',k,nf(k,0)+' kcal brûlées en séance','🔥'));
     }
+    if(state.settings.modules.kcalIn) [7,30,100,200,365].forEach(n=>push('kin'+n,'kcaldays',n,n+' '+plural(n,'jour')+' de calories notées','🍽️'));
+    if(state.settings.modules.pillbox) [7,30,100,200].forEach(n=>push('pill'+n,'pilldays',n,n+' '+plural(n,'jour')+' de pilulier complet','💊'));
     return L;
   });
 }
+/* Poids retenu pour les paliers : le plus favorable entre la pesée du jour et la tendance. */
+function milestoneWeightKg(){
+  const raw=mv(lastWeighIn(),'weight'), tr=trendNow();
+  if(raw==null) return tr;
+  if(tr==null) return raw;
+  const w0=startWeight(), tg=targetWeight();
+  const versLeBas=(tg==null||w0==null)?true:(tg<=w0);
+  return versLeBas?Math.min(raw,tr):Math.max(raw,tr);
+}
 function milestoneValue(def){
   switch(def.kind){
-    case 'lost':       return kgLost();
-    case 'under':      return (trendNow()!=null)?-trendNow():null;
+    case 'lost':       { const w0=startWeight(), w=milestoneWeightKg();
+                         return (w0==null||w==null)?null:Math.round((w0-w)*100)/100; }
+    case 'under':      { const w=milestoneWeightKg(); return w!=null?-w:null; }
     case 'fatlost':    { const c=totalDelta(PICK_FATK); return c?-c.delta:null; }
+    case 'fatunder':   { const e=lastWeighIn(), v=e?mv(e,'fat','pct'):null; return v!=null?-v:null; }
     case 'pct':        { const p=goalProgressPct(); return p!=null?p*100:null; }
     case 'streak':     return streakInfo().days;
     case 'count':      return weighIns().length;
+    case 'weeks':      { const d=sinceStartDays(); return d!=null?Math.floor(d/7):null; }
+    case 'motivations':return (state.motivations||[]).filter(m=>m.active!==false).length;
     case 'sessions':   return (state.sessions||[]).length;
     case 'sporthours': return Math.floor((state.sessions||[]).reduce((s,x)=>s+(x.durationMin||0),0)/60);
+    case 'sportweeks': return streakWeeks();
+    case 'activities': { const k={}; (state.sessions||[]).forEach(s=>k[s.activityKey]=1); return Object.keys(k).length; }
+    case 'sportkcal':  return Math.round((state.sessions||[]).reduce((s,x)=>s+(x.kcal!=null?x.kcal
+                         :estimateKcal(x.activityKey,x.durationMin,x.intensity,x.date).kcal),0));
+    case 'kcaldays':   return state.entries.filter(e=>mv(e,'kcalIn')!=null).length;
+    case 'pilldays':   return pillPerfectDays();
   }
   return null;
 }
+/* Jours de pilulier complets depuis l'activation du module — sans juger le futur. */
+function pillPerfectDays(){
+  if(!state.settings.modules.pillbox) return 0;
+  return cached('pillperf',()=>{
+    const floor=state.settings.pillbox.floorDate||isoToday();
+    let n=0, d=pillToday(), guard=0;
+    while(guard++<800&&d>=floor){
+      const c=pillDayCounts(d);
+      if(c.expected>0&&c.taken>=c.expected) n++;
+      d=addDayYMD(d,-1);
+    }
+    return n;
+  });
+}
+const MS_UNDER={under:1,fatunder:1};
 function milestoneReached(def){ const v=milestoneValue(def); if(v==null) return false;
-  return (def.kind==='under')?(v>=-def.th):(v>=def.th); }
+  return MS_UNDER[def.kind]?(v>=-def.th):(v>=def.th); }
 function milestoneRemain(def){ const v=milestoneValue(def); if(v==null) return null;
-  return (def.kind==='under')?((-def.th)-v):(def.th-v); }
+  return MS_UNDER[def.kind]?((-def.th)-v):(def.th-v); }
 function defByCode(c){ const L=milestoneDefs(); for(const d of L) if(d.code===c) return d; return null; }
 function checkMilestones(opt){
   opt=opt||{};
@@ -1149,8 +1328,16 @@ function milestoneCheer(d){
     case 'pct': return X+' % du chemin. '+(X>=50?'Tu es plus près de l’arrivée que du départ.':'Tu es bien lancé.');
     case 'streak': return X+' jours de pesées d’affilée. La régularité, c’est l’essentiel du travail.';
     case 'count': return X+'e pesée enregistrée. Tu as construit un vrai historique — plus personne ne peut te raconter d’histoires sur ton poids.';
-    case 'sessions': return X+' séances. Ton corps a compris le message.';
+    case 'fatunder': return 'Ta masse grasse passe sous '+X+' %. C’est la mesure qui parle vraiment de ton corps, pas seulement de ton poids.';
+    case 'weeks': return X+' '+plural(X,'semaine')+' que tu suis ça. Les résultats viennent du temps, et le temps, tu le mets.';
+    case 'motivations': return X===1?'Ta première raison est écrite. Les matins gris, c’est elle que tu reliras.':X+' raisons écrites. Tu sais pourquoi tu fais ça, et c’est le plus important.';
+    case 'sessions': return X===1?'Première séance notée. C’est souvent celle-là la plus dure.':X+' séances. Ton corps a compris le message.';
     case 'sporthours': return X+' heures d’entraînement cumulées. C’est du temps investi en toi, pas ailleurs.';
+    case 'sportweeks': return X+' '+plural(X,'semaine')+' d’affilée sans en sauter une seule. C’est ça, une habitude.';
+    case 'activities': return X+' activités différentes. Varier, c’est la meilleure façon de ne pas se lasser.';
+    case 'sportkcal': return nf(X,0)+' kcal brûlées à l’entraînement depuis le début.';
+    case 'kcaldays': return X+' '+plural(X,'jour')+' de calories notées. C’est cette régularité qui rend le calcul de ta dépense réelle possible.';
+    case 'pilldays': return X+' '+plural(X,'jour')+' de pilulier complet. Prendre soin de soi, c’est aussi ça.';
   }
   return 'Un cap de plus. Continue.';
 }
@@ -1179,22 +1366,29 @@ function nextMilestone(){
   milestoneDefs().forEach(d=>{
     if(seen[d.code]) return;
     const rem=milestoneRemain(d); if(rem==null||rem<=0) return;
-    const w=(d.kind==='under'||d.kind==='lost')?1:((d.kind==='fatlost')?1.6:2.6);
+    const w=(d.kind==='under'||d.kind==='lost')?1:((d.kind==='fatlost'||d.kind==='fatunder')?1.6:2.6);
     const score=rem*w;
     if(!best||score<best.score) best={def:d,rem:rem,score:score};
   });
   if(!best) return null;
   const v=milestoneValue(best.def);
-  const th=(best.def.kind==='under')?-best.def.th:best.def.th;
+  const th=MS_UNDER[best.def.kind]?-best.def.th:best.def.th;
   const ref=(best.def.kind==='under')?(-(startWeight()||0)):0;
   const pct=clamp((v-ref)/Math.max(0.001,th-ref),0,1);
   let txt;
   const k=best.def.kind;
+  const R=Math.ceil(best.rem);
   if(k==='under'||k==='lost'||k==='fatlost') txt='encore '+fmtKg(best.rem);
-  else if(k==='pct') txt='encore '+Math.ceil(best.rem)+' %';
-  else if(k==='streak') txt='encore '+Math.ceil(best.rem)+' '+plural(Math.ceil(best.rem),'jour');
-  else if(k==='count') txt='encore '+Math.ceil(best.rem)+' '+plural(Math.ceil(best.rem),'pesée');
-  else txt='encore '+Math.ceil(best.rem);
+  else if(k==='fatunder') txt='encore '+nf(best.rem,1)+' point'+(best.rem>=2?'s':'');
+  else if(k==='pct') txt='encore '+R+' %';
+  else if(k==='streak'||k==='kcaldays'||k==='pilldays') txt='encore '+R+' '+plural(R,'jour');
+  else if(k==='count') txt='encore '+R+' '+plural(R,'pesée');
+  else if(k==='weeks'||k==='sportweeks') txt='encore '+R+' '+plural(R,'semaine');
+  else if(k==='sessions') txt='encore '+R+' '+plural(R,'séance');
+  else if(k==='sporthours') txt='encore '+R+' h';
+  else if(k==='sportkcal') txt='encore '+nf(R,0)+' kcal';
+  else if(k==='activities') txt='encore '+R+' '+plural(R,'activité');
+  else txt='encore '+R;
   return {def:best.def,rem:best.rem,remainText:txt,pct:pct};
 }
 
@@ -1380,6 +1574,7 @@ function mountCharts(animate){
     if(it.opts.scrub) wireScrub(el,it.id);
     if(it.opts.hscroll){ try{ el.scrollLeft=el.scrollWidth; }catch(e){} }
     if(animate&&!motionOff()) animateChart(el);
+    else qa('g.bars-in',el).forEach(g=>g.classList.add('on'));   // sans animation, on montre tout de suite
   });
 }
 function padFor(o){ return { t:14, r:(o&&o.rightAxis)?38:12, b:22, l:(o&&o.noYAxis)?8:38 }; }
@@ -1576,16 +1771,20 @@ function barChart(bars,opts){
   const W=opts.w||490, H=opts.h||CH_H2, pad=padFor({rightAxis:!!opts.overlay});
   const plotW=W-pad.l-pad.r, plotH=H-pad.t-pad.b;
   const from=opts.from,to=opts.to,span=Math.max(1,dayNum(to)-dayNum(from));
-  const X=d=>pad.l+((dayNum(d)-dayNum(from))/span)*plotW;
   if(!bars.length) return '<svg class="chart" viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'">'
     +'<text class="chart-empty" x="'+(W/2)+'" y="'+(H/2)+'" text-anchor="middle">Rien à afficher</text></svg>';
+  /* Une barre est centrée sur sa date : sans marge, la première et la dernière
+     débordent d'une demi-largeur et viennent mordre sur les étiquettes d'axe. */
+  const step0=(opts.bucket==='month'?30:opts.bucket==='week'?7:1);
+  const nB0=Math.max(1,Math.round(span/step0)+1);
+  const bw0=Math.max(3,Math.min(30,plotW/nB0-3));
+  const inset=Math.min(plotW/3,bw0/2+2);
+  const X=d=>pad.l+inset+((dayNum(d)-dayNum(from))/span)*(plotW-2*inset);
   let mn=0,mx=0; bars.forEach(b=>{ if(b.v<mn) mn=b.v; if(b.v>mx) mx=b.v; });
   if(opts.target&&opts.target>mx) mx=opts.target;
   const sc=niceScale(mn,mx===mn?mn+1:mx,3);
   const Y=v=>pad.t+(1-(v-sc.min)/((sc.max-sc.min)||1))*plotH;
-  const step=(opts.bucket==='month'?30:opts.bucket==='week'?7:1);
-  const nB=Math.max(1,Math.round(span/step)+1);
-  const bw=Math.max(3,Math.min(30,plotW/nB-3));
+  const bw=bw0;
   let g='';
   sc.ticks.forEach(t=>{ const y=r1(Y(t));
     g+='<line class="ax-grid" x1="'+pad.l+'" y1="'+y+'" x2="'+(W-pad.r)+'" y2="'+y+'"/>'
@@ -1607,7 +1806,12 @@ function barChart(bars,opts){
     const Y2=v=>pad.t+(1-(v-s2.min)/((s2.max-s2.min)||1))*plotH;
     s2.ticks.forEach(t=>{ g+='<text class="ax-lbl" x="'+(W-pad.r+6)+'" y="'+r1(Y2(t)+3.5)+'" text-anchor="start" fill="'+op.color+'" opacity=".75">'+esc(nf(t,op.dec==null?1:op.dec))+'</text>'; });
     if(s2.min<0&&s2.max>0){ const y=r1(Y2(0)); g+='<line class="ax-zero" x1="'+pad.l+'" y1="'+y+'" x2="'+(W-pad.r)+'" y2="'+y+'"/>'; }
-    g+='<path class="ln-raw" d="'+pathLine(op.points,X,Y2,3)+'" stroke="'+op.color+'" stroke-width="2" opacity=".95"/>';
+    /* Le pas de l'overlay suit celui des barres : des points hebdomadaires sont espaces
+       de sept jours, un seuil de trois les effacerait tous. */
+    const ogap=op.gap||(opts.bucket==='month'?40:opts.bucket==='week'?9:3);
+    g+='<path class="ln-raw" d="'+pathLine(op.points,X,Y2,ogap)+'" stroke="'+op.color+'" stroke-width="2" opacity=".95"/>';
+    if(op.points.length<=40) op.points.forEach(pt=>{
+      g+='<circle cx="'+r1(X(pt.date))+'" cy="'+r1(Y2(pt.v))+'" r="2.6" fill="'+op.color+'"/>'; });
   }
   const nBars=bars.length;
   bars.forEach((b,i)=>{ const every=Math.ceil(nBars/6);
@@ -1791,9 +1995,11 @@ function routeHTML(r,seg){
   if(r==='/paliers') return screenPaliers();
   if(r==='/motivations') return screenMotivations();
   if(r==='/analyse') return screenAnalyse();
-  if(r==='/sport') return screenSport();
-  if(r==='/planning') return screenPlanning();
-  if(r==='/activites') return screenActivities();
+  if(r==='/simulateur') return screenSimulateur();
+  if(r==='/astuces') return screenAstuces();
+  if(r==='/sport') return screenSport('seances');
+  if(r==='/planning') return screenSport('planning');
+  if(r==='/activites') return screenSport('activites');
   if(r==='/pilulier') return screenPillbox();
   if(seg[1]==='produit'&&seg[2]) return screenMedDetail(seg[2]);
   if(r==='/calories') return screenCalories();
@@ -1807,7 +2013,7 @@ function routeHTML(r,seg){
    Analyse et Calories s'ouvrent depuis Plus, c'est donc Plus qui s'allume. */
 const TAB_COURBES=['/courbes'];
 const TAB_PLUS=['/plus','/objectif','/paliers','/motivations','/sport','/planning','/activites',
-  '/pilulier','/sauvegarde','/reglages','/metriques','/aide','/analyse','/calories'];
+  '/pilulier','/sauvegarde','/reglages','/metriques','/aide','/analyse','/calories','/simulateur','/astuces'];
 function tabOf(r){
   if(TAB_COURBES.indexOf(r)>=0) return '/courbes';
   if(r==='/tableau') return '/tableau';
@@ -1826,13 +2032,13 @@ function tabOf(r){
 let WI=null;        // brouillon de saisie {date, m:{key:{v,u}}, note}
 let WI_RETOUR=null; // date de la pesée quittée pour aller cocher une mesure (cf. go-metrics)
 
-function openWeighIn(date){
+function openWeighIn(date,focusKey){
   WI_RETOUR=null;
   date=validYMD(date)?date:isoToday();
   const e=entryFor(date);
   WI={date:date, m:{}, note:e?(e.note||''):'', existed:!!e};
   if(e) for(const k in e.m) WI.m[k]=Object.assign({},e.m[k]);
-  openSheet(wiTitle(),wiBody(),{onOpen:()=>{ wiFill(); wiRecompute(); wiFocus(); },onClose:wiAutoSave});
+  openSheet(wiTitle(),wiBody(),{onOpen:()=>{ wiFill(); wiRecompute(); wiFocus(focusKey); },onClose:wiAutoSave});
 }
 function wiTitle(){ return 'Pesée — '+capit(fmtDayLabel(WI.date)); }
 /* Le brouillon survit à un aller-retour vers les réglages : on le rouvre tel quel. */
@@ -1860,9 +2066,13 @@ function wiAutoSave(){
   update();
   if(!vide) toast('Pesée du '+fmtDateShort(d)+' enregistrée ✓');
 }
-function wiFocus(){
-  const el=document.getElementById('mi-weight-val');
-  if(el&&!el.value) try{ el.focus(); }catch(e){}
+/* Le curseur va là où il y a quelque chose à taper. Depuis l'écran Calories, c'est la
+   case des calories — pas celle du poids, déjà remplie ce matin-là. */
+function wiFocus(key){
+  const el=document.getElementById('mi-'+(key||'weight')+'-val');
+  if(!el) return;
+  if(key||!el.value) try{ el.focus(); if(key&&el.value) el.select(); }catch(e){}
+  if(key&&el.scrollIntoView) try{ el.scrollIntoView({block:'center'}); }catch(e){}
 }
 function wiBody(){
   const list=activeMetrics();
@@ -2056,13 +2266,26 @@ function screenHome(){
   h+=homeStatus();
   h+=homeHero();
   h+=homeDay();
-  h+=homeGoal();
-  h+=homeMilestone();
-  h+=homeStats();
+  const prog=homeGoal()+homeMilestone()+homeStats();
+  if(prog) h+='<div class="section-title">Ta progression</div>'+prog;
   h+=homeInsight();
   h+=homeWhy();
   h+=homeBackup();
   return h;
+}
+/* Quatorze pastilles : une par jour, pesé ou non. C'est la vue la plus courte qui
+   donne envie de ne pas casser la ligne — et elle tient sur une ligne. */
+function homeDots(){
+  const t=isoToday(), sk=state.ui.skippedDays||{};
+  let h='<div class="daydots" aria-label="Tes quatorze derniers jours">';
+  for(let i=13;i>=0;i--){
+    const d=addDayYMD(t,-i);
+    const has=mv(entryFor(d),'weight')!=null;
+    const cls=has?'on':(d===t?'today':(sk[d]?'skip':'off'));
+    const lab=capit(parseYMD(d).toLocaleDateString('fr-FR',{weekday:'short',day:'numeric'}));
+    h+='<button class="daydot '+cls+'" data-act="weigh-in" data-date="'+d+'" aria-label="'+esc(lab)+(has?' — pesé':' — pas de pesée')+'"></button>';
+  }
+  return h+'</div>';
 }
 function homeHead(){
   const n=state.settings.profile.firstName;
@@ -2099,6 +2322,7 @@ function statusTodo(){
   if(hr>=20) h+='<button class="btn btn--ghost btn--block" data-act="skip-today" style="margin-top:8px">Passer mon tour aujourd’hui</button>';
   if(s.days>0) h+='<div class="streak-line">🔥 <b>'+s.days+' '+plural(s.days,'jour')+' de suite</b>'
    +(s.jokers?' <span class="muted small">(1 joker utilisé)</span>':'')+'</div>';
+  if(weighIns().length>1) h+=homeDots();
   return h+'</div>';
 }
 const DONE_TITLES=['Pesée du jour enregistrée','C’est noté pour aujourd’hui','Fait. Un jour de plus au compteur',
@@ -2114,6 +2338,7 @@ function statusDone(){
   if(isOutlier(e)) h+='<div class="small muted" style="margin-top:10px">Ce chiffre est un peu à part par rapport à ta tendance — sel, sport de la veille, mauvais sommeil : c’est normal. La tendance, elle, ne bouge presque pas.</div>';
   h+='<div class="streak-line">🔥 <b>'+s.days+' '+plural(s.days,'jour')+' de suite</b>'
    +(best>s.days?' <span class="muted small">· record '+best+'</span>':' <span class="muted small">· c’est ton record 🏆</span>')+'</div>';
+  if(weighIns().length>1) h+=homeDots();
   return h+'</div>';
 }
 function statusSkipped(){
@@ -2235,9 +2460,9 @@ function homeAgenda(){
     plan.forEach(p=>{
       const did=done.some(s=>s.planKey===p.key);
       const late=!did&&p.time&&hhmmToMin(p.time)<now;
-      h+='<div class="row'+(did?' is-dim':'')+'">'
+      h+='<div class="row row--wrap'+(did?' is-dim':'')+'">'
         +'<div class="row-ic">'+(p.emoji||'🏋️')+'</div>'
-        +'<div class="row-main"><div class="row-title">'+esc(p.label)+'</div>'
+        +'<div class="row-main"><div class="row-title wrap">'+esc(p.label)+'</div>'
         +'<div class="row-sub">'+(p.time?'<span class="pill">'+esc(p.time)+'</span>':'')
         +(p.durationMin?'<span class="pill">'+fmtMin(p.durationMin)+'</span>':'')
         +(did?'<span class="badge badge--ok">fait ✓</span>':'')+'</div></div>'
@@ -2281,9 +2506,8 @@ function homeMeds(){
       +'<div class="row-sub">'+box.counts.taken+' '+plural(box.counts.taken,'prise')+' sur '+box.counts.expected
       +(pillStreak()>1?' · série de '+pillStreak()+' jours':'')+'</div></div>'+arrowHTML()+'</div>';
   }
-  const late=due.some(s=>s.late);
   const shown=due.slice(0,4), rest=due.length-shown.length;
-  let h='<div class="card'+(late?' pill-urgent':'')+'">'
+  let h='<div class="card">'
     +'<div class="today-top" style="margin-bottom:8px"><div class="row-main"><div class="row-title">💊 Prises du jour</div></div>'
     +'<div class="small muted tnum">'+box.counts.taken+'/'+box.counts.expected+'</div></div><div class="list">';
   h+=shown.map(s=>pillSlotRow(s,true)).join('');
@@ -2365,12 +2589,12 @@ function homeMilestone(){
      +'<div class="bar" style="margin-top:10px"><span class="bar-seg" data-bar="'+next.pct.toFixed(3)+'" style="background:var(--grad-brand)"></span></div>';
   }
   if(done.length){
+    const der=defByCode(done[0].code);
     h+=(next?'<div class="divider"></div>':'')
-     +'<div class="stat-label" style="margin-bottom:8px">'+done.length+' '+plural(done.length,'palier')+' '+plural(done.length,'franchi')+'</div>'
-     +'<div class="chip-wrap">'
-     +done.slice(0,6).map(m=>{ const d=defByCode(m.code); return d?('<span class="chip">'+d.emoji+' '+esc(d.label)+'</span>'):''; }).join('')
-     +(done.length>6?'<button class="chip" data-act="go" data-route="/paliers">+'+(done.length-6)+'</button>':'')
-     +'</div>';
+     +'<div class="flex between aic tap" data-act="go" data-route="/paliers">'
+     +'<div style="min-width:0"><div class="stat-label">'+done.length+' '+plural(done.length,'palier')+' '+plural(done.length,'franchi')+'</div>'
+     +(der?'<div class="small muted" style="margin-top:2px">dernier : '+der.emoji+' '+esc(der.label)+'</div>':'')+'</div>'
+     +arrowHTML()+'</div>';
   }
   return h+'</div>';
 }
@@ -2380,15 +2604,23 @@ function homeStats(){
   const d=sinceStartDays(), lost=kgLost(), t=trendNow();
   const fat=totalDelta(PICK_FATK), fatp=totalDelta(PICK_FATP), mus=totalDelta(PICK_MUSK);
   const b=(t!=null)?bmiOf(t):null, w0=startWeight(), b0=(w0!=null)?bmiOf(w0):null;
+  /* Quatre cases, pas six : au-delà on ne lit plus, on balaye. Les mesures moins
+     parlantes (nombre de pesées, IMC de départ) passent dans la ligne du dessous. */
   const cells=[];
-  if(d!=null) cells.push(statCard('Depuis le début',d+' j',humanDuration(d),''));
   if(lost!=null) cells.push(statCard('Poids perdu',sgnKg(-lost),equivShort(lost)||'',deltaClass(-lost,-1)));
   if(fat&&metricOn('fat')) cells.push(statCard('Masse grasse',sgnKg(fat.delta),fatp?sgnPt(fatp.delta):staleSub(fat.lastDate),deltaClass(fat.delta,-1)));
   if(mus&&metricOn('muscle')) cells.push(statCard('Muscle',sgnKg(mus.delta),staleSub(mus.lastDate)||'',deltaClass(mus.delta,1)));
   if(b!=null) cells.push(statCard('IMC',nf(b,1),(b0!=null&&Math.abs(b0-b)>=0.1)?('était '+nf(b0,1)):bmiCat(b),''));
-  cells.push(statCard('Pesées',String(weighIns().length),adherencePct()!=null?(adherencePct()+' % des jours'):'',''));
+  if(cells.length<4&&d!=null) cells.push(statCard('Depuis le début',d+' j',humanDuration(d),''));
+  if(cells.length<4) cells.push(statCard('Pesées',String(weighIns().length),adherencePct()!=null?(adherencePct()+' % des jours'):'',''));
   if(!cells.length) return '';
-  return '<div class="section-title">En résumé</div><div class="stats">'+cells.join('')+'</div>'+bmiLine(b,b0);
+  const shown=cells.slice(0,4);
+  let h='<div class="stats'+(shown.length===4?' stats-2':'')+'">'+shown.join('')+'</div>';
+  const bits=[];
+  if(d!=null&&cells.length>=4) bits.push(humanDuration(d)+' de suivi');
+  bits.push(weighIns().length+' '+plural(weighIns().length,'pesée')+(adherencePct()!=null?' · '+adherencePct()+' % des jours':''));
+  h+='<div class="small muted center" style="margin:8px 4px 0">'+esc(bits.join(' · '))+'</div>';
+  return h+bmiLine(b,b0);
 }
 function staleSub(lastDate){ const n=diffDays(lastDate,isoToday()); return n>=3?('il y a '+n+' j'):''; }
 function bmiLine(b,b0){
@@ -2397,14 +2629,13 @@ function bmiLine(b,b0){
     return '<div class="card" style="margin-top:10px"><div class="small muted">Ajoute ta taille pour voir ton IMC.</div>'
       +'<button class="btn btn--ghost btn--block" data-act="go" data-route="/reglages" style="margin-top:8px">Renseigner ma taille</button></div>';
   }
+  /* La carte ne s'affiche que si elle annonce un cap à venir : répéter la définition
+     de l'IMC tous les matins n'apprend rien à personne. */
   const t=trendNow(), nb=t!=null?nextBmiThreshold(t):null;
-  let h='<div class="card" style="margin-top:10px"><div class="small">'
-   +'IMC <b>'+nf(b,1)+'</b> — <span class="muted">'+esc(bmiCat(b).toLowerCase())+'</span>'
-   +((b0!=null&&b0>b)?(' <span class="delta delta--good">'+MINUS+nf(b0-b,1)+'</span>'):'')+'</div>';
-  if(nb&&nb.kg!=null&&t!=null&&nb.kg<t)
-    h+='<div class="small muted" style="margin-top:4px">Sous '+fmtKg(nb.kg)+', ton IMC passe sous '+nb.bmi+'. Il te reste '+fmtKg(nb.remainKg)+'.</div>';
-  h+='<div class="muted xsmall" style="margin-top:6px">L’IMC ne distingue pas le muscle du gras — c’est un repère, pas un verdict.</div>';
-  return h+'</div>';
+  if(!(nb&&nb.kg!=null&&t!=null&&nb.kg<t)) return '';
+  return '<div class="card tap" style="margin-top:10px" data-act="go" data-route="/objectif">'
+   +'<div class="small">Sous <b>'+fmtKg(nb.kg)+'</b>, ton IMC passe sous '+nb.bmi+'. Il te reste '+fmtKg(nb.remainKg)+'.</div>'
+   +'<div class="muted xsmall" style="margin-top:5px">L’IMC ne distingue pas le muscle du gras — c’est un repère, pas un verdict.</div></div>';
 }
 
 /* ---------- Bloc G : le mot du jour ---------- */
@@ -2487,8 +2718,12 @@ function screenOnboarding(){
    EN % ET EN KG. Un % de gras qui baisse pendant que le poids
    baisse ne dit rien sur le gras perdu ; les kilos, si.
    ============================================================ */
-const CH_DEFAULT={view:'compo',period:'90',metric:'weight',overlayWeight:false,avg7:true,goalLine:true,lag:2,gapDays:2};
-function CH(){ state.ui.charts=Object.assign({},CH_DEFAULT,state.ui.charts||{}); return state.ui.charts; }
+const CH_DEFAULT={view:'compo',period:'90',metric:'weight',overlayWeight:false,avg7:true,goalLine:true,lag:2,gapDays:2,calOverlay:'delta'};
+function CH(){
+  const c=state.ui.charts||(state.ui.charts={});
+  for(const k in CH_DEFAULT) if(c[k]===undefined) c[k]=CH_DEFAULT[k];
+  return c;                       // TOUJOURS la même référence, sinon les bascules se perdent
+}
 function chUnit(){ const m=CH().metric; return isDualKey(m)||m==='lean' ? metricUnit(m) : null; }
 function chRange(){
   const to=isoToday(), p=CH().period;
@@ -2537,6 +2772,7 @@ function screenCourbes(){
   const tabs=[['compo','Composition']];
   if(state.settings.modules.sport) tabs.push(['sport','Sport']);
   if(state.settings.modules.kcalIn) tabs.push(['calories','Calories']);
+  if(state.settings.modules.sport||state.settings.modules.kcalIn) tabs.push(['croise','Croisements']);
   if(!tabs.some(t=>t[0]===c.view)) c.view='compo';   // une vue dont le module est coupé n'existe plus
   let h=head('Courbes');
   if(tabs.length>1) h+='<div class="subtabs">'+tabs.map(t=>
@@ -2544,6 +2780,7 @@ function screenCourbes(){
   h+=segHTML([['30','30 j'],['90','90 j'],['180','6 mois'],['365','1 an'],['all','Tout']],c.period,'ch-period','',' data-p=""');
   if(c.view==='compo') h+=courbesCompo();
   else if(c.view==='sport') h+=courbesSport();
+  else if(c.view==='croise') h+=courbesCroisements();
   else h+=courbesCalories();
   return h;
 }
@@ -2709,28 +2946,214 @@ function courbesCalories(){
   const c=CH(), r=chRange();
   const kin=[]; state.entries.forEach(e=>{ if(e.date<r.from||e.date>r.to) return;
     const v=mv(e,'kcalIn'); if(v!=null) kin.push({date:e.date,v:v,color:'#F0A93B'}); });
-  const dw=dailyDeltaWeight(r.from,r.to);
+  if(!kin.length)
+    return empty('🍽️','Aucune calorie notée sur la période',
+      'Note le total que Yazio t’affiche le soir : c’est ce qui permet à Élan de calculer ta dépense réelle et de trouver ton décalage.',
+      '<button class="btn btn--primary" data-act="quick-kcal">+ Noter mes calories</button>');
   const lag=Math.min(XC_MAX_LAG,Math.max(1,c.lag|0));   // la pesée du matin précède les repas du jour
   const shifted=kin.map(p=>({date:addDayYMD(p.date,lag),v:p.v,color:'#F0A93B'})).filter(p=>p.date<=r.to);
-  let h='<div class="chart-card"><div class="chart-title">Calories mangées (décalées de +'+lag+' j) et variation de poids</div>'
+  /* Deux lectures possibles de la réaction du poids : le soubresaut du lendemain
+     (brut, bruyant) ou la tendance lissée (calme, plus honnête). */
+  const mode=c.calOverlay||'delta';
+  const ov=(mode==='trend')
+    ? {points:trendSeries().filter(x=>x.date>=r.from&&x.date<=r.to).map(x=>({date:x.date,v:x.trend})),color:'var(--m-poids)',dec:1,unit:'kg'}
+    : {points:dailyDeltaWeight(r.from,r.to),color:'var(--m-poids)',dec:2,unit:'kg'};
+  const neutral=maintenanceKcal();
+  let h='<div class="chart-card"><div class="chart-title">Calories mangées (décalées de +'+lag+' j) et '+(mode==='trend'?'tendance du poids':'variation de poids')+'</div>'
    +chartSlot(w=>barChart(shifted,{w:w,h:CH_H,from:r.from,to:r.to,bucket:'day',dec:0,
-       overlay:{points:dw,color:'var(--m-poids)',dec:2,unit:'kg'}}),{h:CH_H})
+       target:(mode==='delta'&&neutral.kcal!=null)?neutral.kcal:0,overlay:ov}),{h:CH_H})
    +'<div class="chart-legend">'
    +'<span class="legend-item" style="color:#F0A93B"><i></i>kcal mangées</span>'
-   +'<span class="legend-item" style="color:var(--m-poids)"><i></i>variation de poids (axe droit)</span>'
+   +'<span class="legend-item" style="color:var(--m-poids)"><i></i>'+(mode==='trend'?'tendance du poids':'variation de poids')+' (axe droit)</span>'
+   +((mode==='delta'&&neutral.kcal!=null)?'<span class="legend-item" style="color:var(--acc)"><i class="dash"></i>ton point neutre</span>':'')
    +'</div></div>';
+  h+='<div class="chart-toggles">'
+   +'<button class="chip'+(mode==='delta'?' is-active':'')+'" data-act="ch-caloverlay" data-v="delta">Variation jour à jour</button>'
+   +'<button class="chip'+(mode==='trend'?' is-active':'')+'" data-act="ch-caloverlay" data-v="trend">Tendance lissée</button>'
+   +'</div>';
+
+  /* Les chiffres qui manquaient : moyenne, écart au point neutre, jours renseignés. */
+  const vals=kin.map(p=>p.v), moy=meanOf(vals);
+  const jours=diffDays(r.from,r.to)+1;
+  h+='<div class="stats stats-2" style="margin-top:12px">'
+   +statCard('Moyenne',nf(moy,0)+' kcal','sur '+kin.length+' '+plural(kin.length,'jour'),'')
+   +statCard('Le plus bas',nf(Math.min.apply(null,vals),0),'','')
+   +statCard('Le plus haut',nf(Math.max.apply(null,vals),0),'','')
+   +statCard('Renseigné',Math.round(kin.length/jours*100)+' %','des jours de la période','')
+   +'</div>';
+  if(neutral.kcal!=null){
+    const ec=moy-neutral.kcal;
+    h+='<div class="sim-gap '+(ec<0?'is-down':(ec>0?'is-up':''))+'" style="margin-top:12px">'
+     +(Math.abs(ec)<60?'Tu manges à peu près à ton point neutre ('+nf(neutral.kcal,0)+' kcal) : ton poids devrait rester stable.'
+       :(ec<0?'En moyenne <b>'+nf(-ec,0)+' kcal</b> sous ton point neutre ('+nf(neutral.kcal,0)+' kcal), soit environ <b>'+fmtKg(-ec*7/KCAL_PER_KG_FAT)+' par semaine</b> en théorie.'
+             :'En moyenne <b>'+nf(ec,0)+' kcal</b> au-dessus de ton point neutre ('+nf(neutral.kcal,0)+' kcal).'))
+     +'</div>'
+     +'<button class="btn btn--ghost btn--block" data-act="go" data-route="/simulateur" style="margin-top:10px">🧮 Simuler un autre niveau</button>';
+  }
+
   h+='<div class="section-title">Décaler les barres</div>'
    +segHTML([['1','+1 j'],['2','+2 j'],['3','+3 j'],['4','+4 j'],['5','+5 j']],String(lag),'ch-lag','')
    +'<div class="hint" style="margin:6px 4px 0">Décale les calories vers la droite pour les aligner sur le moment où le poids réagit.</div>';
-  const xc=crossCorrIntakeWeight();
-  h+='<div class="insight'+(xc.ok&&xc.solid?'':' insight--neutral')+'" style="margin-top:12px"><div class="insight-ic">🍽️</div><div class="insight-txt">';
-  if(!xc.ok) h+='Pas encore assez de journées avec <strong>calories ET pesée</strong> pour chercher ce lien. Il en faut une trentaine, tu en as '+(xc.n||0)+'.';
-  else if(xc.solid) h+='Chez toi, un gros apport se voit surtout <strong>'+(xc.best.lag===1?'dès le lendemain matin':xc.best.lag+' jours après')+'</strong> : +1 000 kcal ≈ '+sgnKg(xc.best.beta*1000)+', sur '+xc.best.n+' journées comparées.'
-    +' <button class="btn-add" data-act="ch-lag" data-val="'+xc.best.lag+'">Utiliser ce décalage</button>';
-  else h+='Piste : le lien apparaît plutôt <strong>'+(xc.best.lag===1?'dès le lendemain':xc.best.lag+' jours après')+'</strong>, mais avec '+xc.best.n+' journées c’est encore fragile. Continue à noter tes calories, je reprendrai ce calcul.';
-  h+='</div></div>';
+  h+=xcInsight();
   h+='<div class="hint" style="margin:8px 4px 0">Un lien statistique n’est pas une preuve de cause. Le sel, l’eau et les fibres décalent la balance sans changer le gras.</div>';
   return h;
+}
+/* Le message sur le décalage calories → poids, gradué selon ce qu'on peut honnêtement dire. */
+function xcInsight(){
+  const xc=crossCorrIntakeWeight();
+  let h='<div class="insight'+(xc.ok&&xc.tier==='solide'?'':' insight--neutral')+'" style="margin-top:12px"><div class="insight-ic">🍽️</div><div class="insight-txt">';
+  if(!xc.ok){
+    const n=xc.n||0;
+    h+='Encore '+Math.max(1,XC_HINT_N-n)+' '+plural(Math.max(1,XC_HINT_N-n),'journée')+' avec <strong>calories ET pesée</strong> et je te dis à quel moment ton poids réagit à ce que tu manges. Tu en as '+n+'.';
+  } else {
+    const q=xc.best.lag===1?'dès le lendemain matin':xc.best.lag+' jours après';
+    if(xc.tier==='solide')
+      h+='Chez toi, un gros apport se voit surtout <strong>'+q+'</strong> : +1 000 kcal ≈ '+sgnKg(xc.best.beta*1000)+', sur '+xc.best.n+' journées comparées.'
+       +' <button class="btn-add" data-act="ch-lag" data-val="'+xc.best.lag+'">Utiliser ce décalage</button>';
+    else if(xc.tier==='piste')
+      h+='Le lien apparaît plutôt <strong>'+q+'</strong> (+1 000 kcal ≈ '+sgnKg(xc.best.beta*1000)+'), mais avec '+xc.best.n+' journées c’est encore fragile. Continue à noter, je reprendrai ce calcul.'
+       +' <button class="btn-add" data-act="ch-lag" data-val="'+xc.best.lag+'">Essayer ce décalage</button>';
+    else
+      h+='<strong>Tout premier aperçu</strong>, à prendre avec des pincettes : sur tes '+xc.best.n+' journées, la balance semble réagir '+q+'. Il en faudra une trentaine pour que ce soit sérieux — mais autant regarder tout de suite.'
+       +' <button class="btn-add" data-act="ch-lag" data-val="'+xc.best.lag+'">Essayer ce décalage</button>';
+  }
+  return h+'</div></div>';
+}
+
+/* ============================================================
+   COURBES — VUE CROISEMENTS
+   ------------------------------------------------------------
+   « Pourquoi mon poids a monté cette semaine ? » On ne répond
+   pas à ça avec une courbe de poids : il faut la mettre à côté
+   de ce qui a changé — les calories, les séances, le sel du week-end.
+   ============================================================ */
+function weekBuckets(nWeeks){
+  const out=[]; let wk=weekStartYMD(addDayYMD(isoToday(),-7*(nWeeks-1)));
+  for(let i=0;i<nWeeks;i++){
+    const end=addDayYMD(wk,6);
+    const ent=state.entries.filter(e=>e.date>=wk&&e.date<=end);
+    const kin=ent.map(e=>mv(e,'kcalIn')).filter(v=>v!=null);
+    const min=(state.sessions||[]).filter(x=>x.date>=wk&&x.date<=end).reduce((a,x)=>a+(x.durationMin||0),0);
+    const cnt=(state.sessions||[]).filter(x=>x.date>=wk&&x.date<=end).length;
+    const a=trendAt(addDayYMD(wk,-1)), b=trendAt(end);
+    out.push({week:wk,mid:addDayYMD(wk,3),end:end,
+      kcal:kin.length?meanOf(kin):null,kcalDays:kin.length,
+      minutes:min,sessions:cnt,weighs:ent.filter(e=>mv(e,'weight')!=null).length,
+      dw:(a!=null&&b!=null)?Math.round((b-a)*100)/100:null,
+      past:end<=isoToday()});
+    wk=addDayYMD(wk,7);
+  }
+  return out;
+}
+function courbesCroisements(){
+  const r=chRange();
+  const nW=clamp(Math.round((diffDays(r.from,r.to)+1)/7),6,53);   // six semaines au minimum : en dessous, comparer n'a pas de sens
+  const W=weekBuckets(nW).filter(w=>w.past||w.weighs>0);
+  const withDw=W.filter(w=>w.dw!=null);
+  if(withDw.length<2)
+    return empty('🔀','Encore un peu de patience',
+      'Ces croisements comparent tes semaines entre elles. Il en faut au moins deux complètes — tu y es presque.',
+      '<button class="btn btn--primary" data-act="weigh-in">⚖️ Saisir ma pesée</button>');
+  /* Cadrage : inutile d'etaler six mois quand on n'a que trois semaines de donnees,
+     les barres s'entassent a droite et les dates se chevauchent. */
+  const plein=W.filter(w=>w.dw!=null||w.kcal!=null||w.minutes>0);
+  const X0=(plein.length?plein[0]:W[0]).mid, X1=(plein.length?plein[plein.length-1]:W[W.length-1]).mid;
+  let h='<div class="hint" style="margin:10px 4px 12px">Une semaine efface le bruit du sel et de l’eau : c’est la plus petite unité où les liens deviennent lisibles.</div>';
+
+  /* 1. Calories moyennes vs variation de poids, semaine par semaine. */
+  if(state.settings.modules.kcalIn){
+    const bars=W.filter(w=>w.kcal!=null).map(w=>({date:w.mid,v:Math.round(w.kcal),color:'#F0A93B',label:fmtDateShort(w.week)}));
+    const line=withDw.map(w=>({date:w.mid,v:w.dw}));
+    if(bars.length>=2){
+      h+='<div class="chart-card"><div class="chart-title">Ce que tu manges → ce que fait ton poids</div>'
+       +chartSlot(w2=>barChart(bars,{w:w2,h:CH_H,from:X0,to:X1,bucket:'week',dec:0,
+           target:maintenanceKcal().kcal||0,overlay:{points:line,color:'var(--m-poids)',dec:2,unit:'kg'}}),{h:CH_H})
+       +'<div class="chart-legend">'
+       +'<span class="legend-item" style="color:#F0A93B"><i></i>kcal / jour (moyenne de la semaine)</span>'
+       +'<span class="legend-item" style="color:var(--m-poids)"><i></i>kg gagnés ou perdus dans la semaine</span>'
+       +'</div><div class="small muted" style="margin-top:8px">'+esc(croiseComment(W,'kcal'))+'</div></div>';
+    }
+  }
+  /* 2. Minutes de sport vs variation de poids. */
+  if(state.settings.modules.sport){
+    const bars=W.map(w=>({date:w.mid,v:w.minutes,color:'var(--m-sport)',label:fmtDateShort(w.week)}));
+    const line=withDw.map(w=>({date:w.mid,v:w.dw}));
+    if(bars.some(b=>b.v>0)){
+      h+='<div class="chart-card"><div class="chart-title">Tes séances → ce que fait ton poids</div>'
+       +chartSlot(w2=>barChart(bars,{w:w2,h:CH_H,from:X0,to:X1,bucket:'week',dec:0,
+           target:state.settings.sport.weeklyGoalMin||0,overlay:{points:line,color:'var(--m-poids)',dec:2,unit:'kg'}}),{h:CH_H})
+       +'<div class="chart-legend">'
+       +'<span class="legend-item" style="color:var(--m-sport)"><i></i>minutes de sport</span>'
+       +'<span class="legend-item" style="color:var(--m-poids)"><i></i>kg de la semaine</span>'
+       +'</div><div class="small muted" style="margin-top:8px">'+esc(croiseComment(W,'sport'))+'</div></div>';
+    }
+  }
+  /* 3. Bilan cumulé : ce que le calcul prévoyait vs ce que la balance a fait. */
+  h+=croiseCumul(r);
+  /* 4. Le tableau récapitulatif : une ligne par semaine, tout à côté. */
+  h+='<div class="section-title">Semaine par semaine</div><div class="card"><div class="wk-table">'
+   +'<div class="wk-row wk-head"><span>Semaine</span>'
+   +(state.settings.modules.kcalIn?'<span>kcal/j</span>':'')
+   +(state.settings.modules.sport?'<span>sport</span>':'')
+   +'<span>poids</span></div>'
+   +W.slice().reverse().filter(w=>w.dw!=null||w.kcal!=null||w.minutes>0).slice(0,16).map(w=>
+      '<div class="wk-row">'
+      +'<span class="wk-d">'+esc(fmtDateShort(w.week))+'</span>'
+      +(state.settings.modules.kcalIn?'<span class="tnum">'+(w.kcal!=null?nf(w.kcal,0):'<span class="miss">—</span>')+'</span>':'')
+      +(state.settings.modules.sport?'<span class="tnum">'+(w.minutes?fmtMin(w.minutes):'<span class="miss">—</span>')+'</span>':'')
+      +'<span class="tnum '+deltaClass(w.dw,-1)+'">'+(w.dw!=null?sgnKg(w.dw):'<span class="miss">—</span>')+'</span>'
+      +'</div>').join('')
+   +'</div></div>';
+  h+='<div class="hint" style="margin:10px 4px 0">Deux choses qui varient ensemble ne se causent pas forcément l’une l’autre. Ces graphiques servent à poser des questions, pas à trancher.</div>';
+  return h;
+}
+/* Un commentaire honnête : on annonce la taille de l'échantillon et on ne conclut pas trop vite. */
+function croiseComment(W,kind){
+  const rows=W.filter(w=>w.dw!=null&&(kind==='kcal'?w.kcal!=null:true));
+  if(rows.length<4) return rows.length+' '+plural(rows.length,'semaine')+' complète'+(rows.length>1?'s':'')
+    +' pour l’instant : il en faut quatre avant de chercher un lien. Le graphique, lui, se lit déjà.';
+  const xs=rows.map(w=>kind==='kcal'?w.kcal:w.minutes), ys=rows.map(w=>w.dw);
+  const r=pearson(xs,ys);
+  if(r==null) return 'Tes '+rows.length+' semaines se ressemblent trop pour qu’une comparaison ait du sens.';
+  const fort=Math.abs(r)>=0.55&&rows.length>=6;
+  if(kind==='kcal'){
+    if(fort&&r>0) return 'Sur tes '+rows.length+' semaines, celles où tu manges le plus sont bien celles où le poids monte le plus. Le lien est net.';
+    if(fort&&r<0) return 'Curieusement, tes semaines les plus copieuses sont aussi celles où tu perds le plus. C’est souvent le signe que le sport ou l’eau brouillent la lecture.';
+    return 'Sur '+rows.length+' semaines, le lien reste flou. C’est normal : une semaine, c’est court, et l’eau pèse plus lourd que la graisse à cette échelle.';
+  }
+  if(fort&&r<0) return 'Tes semaines les plus sportives sont aussi celles où la balance descend le plus, sur '+rows.length+' semaines observées.';
+  if(fort&&r>0) return 'Tes grosses semaines de sport coïncident avec des semaines où le poids monte un peu. Rien d’inquiétant : un muscle sollicité retient de l’eau pendant quelques jours.';
+  return 'Sur '+rows.length+' semaines, le sport ne se lit pas directement sur la balance. Il agit surtout sur ce que tu gardes de muscle, et ça, la balance ne le dit pas.';
+}
+/* Le cumul : additionner les écarts au point neutre, jour après jour, et comparer
+   la perte prédite à la perte réelle. C'est le graphique qui explique le mieux
+   pourquoi une semaine « sans résultat » n'est pas une semaine perdue. */
+function croiseCumul(r){
+  const neutral=maintenanceKcal();
+  if(!state.settings.modules.kcalIn||neutral.kcal==null) return '';
+  const rows=state.entries.filter(e=>e.date>=r.from&&e.date<=r.to&&mv(e,'kcalIn')!=null);
+  if(rows.length<7) return '';
+  let cum=0; const pred=[];
+  rows.forEach(e=>{ cum+=(mv(e,'kcalIn')-neutral.kcal)/KCAL_PER_KG_FAT; pred.push({date:e.date,v:Math.round(cum*100)/100}); });
+  const t0=trendAt(rows[0].date);
+  const real=trendSeries().filter(x=>x.date>=rows[0].date&&x.date<=r.to&&t0!=null)
+    .map(x=>({date:x.date,v:Math.round((x.trend-t0)*100)/100}));
+  if(real.length<3) return '';
+  const ecart=real.length&&pred.length?(real[real.length-1].v-pred[pred.length-1].v):null;
+  return '<div class="chart-card"><div class="chart-title">Ce que le calcul prévoyait, ce que la balance a fait</div>'
+   +chartSlot(w=>lineChart([
+      {key:'reel',label:'Réel',color:'var(--m-poids)',unit:'kg',dec:2,points:real,dots:false},
+      {key:'pred',label:'Prévu',color:'var(--acc)',unit:'kg',dec:2,points:pred,dash:'5 4',dots:false}],
+      {w:w,h:CH_H,from:rows[0].date,to:r.to,id:'cum',scrub:false,yUnit:'kg'}),{h:CH_H})
+   +'<div class="chart-legend">'
+   +'<span class="legend-item" style="color:var(--m-poids)"><i></i>ta tendance réelle</span>'
+   +'<span class="legend-item" style="color:var(--acc)"><i class="dash"></i>ce que tes calories prévoyaient</span>'
+   +'</div><div class="small muted" style="margin-top:8px">'
+   +(ecart==null?'':(Math.abs(ecart)<0.7
+      ?'Les deux courbes se suivent à '+nf(Math.abs(ecart),1)+' kg près : tes chiffres sont cohérents, et ton point neutre est bien réglé.'
+      :(ecart<0?'Tu as perdu '+fmtKg(-ecart)+' de plus que ce que tes calories prévoyaient. En début de période, c’est presque toujours de l’eau et du glycogène.'
+               :'La balance est '+fmtKg(ecart)+' au-dessus de la prévision. Les trois explications habituelles : des portions sous-estimées, un point neutre un peu haut, ou de l’eau qui masque la perte.')))
+   +'</div></div>';
 }
 function dailyDeltaWeight(from,to){
   const out=[]; let prev=null;
@@ -2758,7 +3181,11 @@ function streakWeeks(){
    ============================================================ */
 const TBL_DEFAULT={range:'90',sort:'date_desc',limit:120,showGaps:true,del:false};
 const TBL_PAGE=120;
-function TBL(){ state.ui.table=Object.assign({},TBL_DEFAULT,state.ui.table||{}); return state.ui.table; }
+function TBL(){
+  const t=state.ui.table||(state.ui.table={});
+  for(const k in TBL_DEFAULT) if(t[k]===undefined) t[k]=TBL_DEFAULT[k];
+  return t;                       // idem : référence stable
+}
 function tblRange(){
   const to=isoToday(), p=TBL().range;
   if(p==='all'){ const f=state.entries.length?state.entries[0].date:to; return {from:f,to:to}; }
@@ -2840,7 +3267,7 @@ function screenTableau(){
    +'<thead><tr>'+head1+'</tr>'
    +'<tr>'+cols.map(c=>'<th class="'+(c.cls||'')+'" scope="col">'+esc(c.sub||'')+'</th>').join('')+'</tr>'
    +'</thead><tbody>';
-  let prevDate=null;
+  let prevDate=null, band=0;
   const body=[];
   shown.forEach(rw=>{
     const e=rw.e;
@@ -2850,7 +3277,11 @@ function screenTableau(){
       if(gap>1) body.push('<tr class="dtable-group" data-act="tbl-gap" data-from="'+a+'" data-to="'+b+'"><td colspan="'+cols.length+'">⋯ '+(gap-1)+' '+plural(gap-1,'jour')+' sans pesée · saisir</td></tr>');
     }
     prevDate=e.date;
-    body.push('<tr class="'+(e.date===isoToday()?'is-today':'')+'" data-act="tbl-row" data-date="'+e.date+'">'
+    /* Une ligne sur deux est teintée : sur un écran de téléphone, c'est ce qui permet de
+       suivre une ligne du regard jusqu'au bout du tableau. Le compteur ignore les lignes
+       « jours manquants », sinon l'alternance se casse à chaque trou. */
+    const cls=[(band++%2)?'is-alt':'',e.date===isoToday()?'is-today':''].filter(Boolean).join(' ');
+    body.push('<tr'+(cls?' class="'+cls+'"':'')+' data-act="tbl-row" data-date="'+e.date+'">'
       +cols.map(c=>tblCell(c,rw)).join('')+'</tr>');
   });
   h+=body.join('')+'</tbody></table></div>';
@@ -3149,15 +3580,34 @@ function hasTrainingOnDay(d){
 }
 
 /* ---------- Écran : Sport ---------- */
-function screenSport(){
+/* Trois onglets, trois questions distinctes : ce que j'ai fait, ce que je vais faire,
+   et avec quoi. Avant, ces trois choses étaient réparties sur trois écrans qui se
+   renvoyaient l'un à l'autre — personne ne savait plus où chercher quoi. */
+const SPORT_TABS=[['seances','🏋️ Mes séances','/sport'],
+                  ['planning','📅 Mon planning','/planning'],
+                  ['activites','⚙️ Mes activités','/activites']];
+function screenSport(tab){
+  tab=SPORT_TABS.some(t=>t[0]===tab)?tab:'seances';
   if(!state.settings.modules.sport){ return backHead('Sport','/plus')
-    +empty('🏃','Le module sport est désactivé','Active-le pour noter tes séances, voir tes minutes de la semaine et ton calendrier d’entraînement.',
+    +empty('🏃','Le module sport est désactivé','Active-le pour noter tes séances, prévoir tes créneaux et voir ton calendrier d’entraînement. Rien n’a été perdu.',
       '<button class="btn btn--primary" data-act="mod-on" data-k="sport">Activer le sport</button>'); }
+  const act=tab==='seances'?'<button class="btn-add" data-act="new-session">+ Séance</button>'
+    :tab==='planning'?'<button class="btn-add" data-act="new-plan">+ Créneau</button>'
+    :'<button class="btn-add" data-act="new-activity">+ Activité</button>';
+  let h=backHead('Sport','/plus',act);
+  h+='<div class="subtabs">'+SPORT_TABS.map(t=>
+    '<button class="subtab'+(tab===t[0]?' is-active':'')+'" data-act="go" data-route="'+t[2]+'">'+esc(t[1])
+    +(t[0]==='planning'&&pendingConfirm().length?'<span class="pastille--num">'+pendingConfirm().length+'</span>':'')
+    +'</button>').join('')+'</div>';
+  if(tab==='planning') return h+sportPlanningView();
+  if(tab==='activites') return h+sportActivitiesView();
+  return h+sportSessionsView();
+}
+function sportSessionsView(){
   const per=state.ui.sportPeriod||7;
   const st=sportStats(per==='year'?'year':per);
   const wg=weeklyGoal();
-  let h=backHead('Sport','/plus','<button class="btn-add" data-act="new-session">+ Séance</button>');
-  h+=segHTML([[7,'7 jours'],[30,'30 jours'],['year','Cette année']],String(per),'sport-period','');
+  let h=segHTML([[7,'7 jours'],[30,'30 jours'],['year','Cette année']],String(per),'sport-period','');
   const kcalOn=state.settings.sport.kcalMode!=='off';
   h+='<div class="stats'+(kcalOn?'':' stats-2')+'" style="margin-top:12px">'
    +statCard('Séances',String(st.count),'','')
@@ -3168,6 +3618,7 @@ function screenSport(){
     h+='<div class="card" style="margin-top:12px"><div class="goal-ring-wrap">'
      +ringHTML(wg.pct,{size:76,stroke:9,color:'var(--acc)',center:'<span style="font-size:13px">'+Math.round(wg.pct*100)+' %</span>'})
      +'<div style="flex:1;min-width:0"><div class="row-title">Objectif de la semaine</div>'
+     +'<div class="stat-label" style="margin-top:1px">depuis lundi</div>'
      +'<div class="small muted" style="margin-top:2px">'
      +(wg.hit?'<span class="down">Objectif atteint ✓ '+fmtMin(wg.minutes)+'</span>'
              :fmtMin(wg.minutes)+' sur '+fmtMin(wg.goalMin)+(wg.restMin?' · encore '+fmtMin(wg.restMin):''))+'</div>'
@@ -3194,9 +3645,6 @@ function screenSport(){
      +'</div>';
   } else h+=empty('🏋️','Aucune séance pour l’instant','Note ta première séance : marche, muscu, badminton… tout compte.',
       '<button class="btn btn--primary" data-act="new-session">+ Noter une séance</button>');
-  h+='<div class="spacer"></div>'
-   +'<button class="btn btn--ghost btn--block" data-act="go" data-route="/planning">📅 Mon planning</button>'
-   +'<button class="btn btn--ghost btn--block" data-act="go" data-route="/activites" style="margin-top:8px">⚙️ Mes activités</button>';
   return h;
 }
 function sportStreakDays(){
@@ -3263,17 +3711,12 @@ function weeklyGoalSheet(){
     +'<div class="sheet-foot"><button class="btn btn--primary btn--block" data-act="wg-save">Enregistrer</button></div>');
 }
 
-/* ---------- Écran : Planning ---------- */
-function screenPlanning(){
-  if(!state.settings.modules.sport)
-    return backHead('Planning','/plus')
-      +'<div class="card"><div class="row-title">📅 Prévisions d’entraînement</div>'
-      +'<div class="small muted" style="margin:6px 0 12px">Les prévisions font partie du module Sport. Active-le pour prévoir tes créneaux — ceux que tu as déjà enregistrés sont conservés.</div>'
-      +'<button class="btn btn--primary btn--block" data-act="mod-on" data-k="sport">Activer le sport</button></div>';
-  let h=backHead('Planning','/sport','<button class="btn-add" data-act="new-plan">+ Créneau</button>');
+/* ---------- Onglet : Planning (ce qui est prévu) ---------- */
+function sportPlanningView(){
+  let h='';
   if(!state.settings.modules.planning){
     h+='<div class="card"><div class="row-title">📅 Prévoir tes entraînements</div>'
-     +'<div class="small muted" style="margin:6px 0 12px">Note tes créneaux habituels (badminton le mardi à 20h, muscu lundi et jeudi…). L’app te les rappellera en ouvrant, histoire de te préparer psychologiquement.</div>'
+     +'<div class="small muted" style="margin:6px 0 12px">Note tes créneaux habituels (badminton le mardi à 20h, muscu lundi et jeudi…). Élan te les rappellera le jour venu, histoire de te préparer psychologiquement.</div>'
      +'<button class="btn btn--primary btn--block" data-act="mod-on" data-k="planning">Activer les prévisions</button></div>';
     return h;
   }
@@ -3319,6 +3762,7 @@ function screenPlanning(){
   const adh=planAdherence();
   if(adh) h+='<div class="card" style="margin-top:12px"><div class="small muted">Sur 30 jours : '+adh.done+' '+plural(adh.done,'séance')
     +' réalisée'+(adh.done>1?'s':'')+' sur '+adh.total+' prévue'+(adh.total>1?'s':'')+'. On ne compte pas les points, on regarde la tendance.</div></div>';
+  h+='<div class="hint" style="margin-top:12px">Un créneau, c’est une <b>intention</b>. Une séance, c’est ce que tu as <b>fait</b>. Confirme une prévision et elle devient une séance dans l’onglet précédent.</div>';
   return h;
 }
 function planRecLabel(p){
@@ -3405,19 +3849,25 @@ function deletePlan(id){
 }
 
 /* ---------- Écran : Activités ---------- */
-function screenActivities(){
-  if(!state.settings.modules.sport)
-    return backHead('Activités','/plus')
-      +'<div class="card"><div class="row-title">🏃 Activités</div>'
-      +'<div class="small muted" style="margin:6px 0 12px">Le catalogue d’activités fait partie du module Sport.</div>'
-      +'<button class="btn btn--primary btn--block" data-act="mod-on" data-k="sport">Activer le sport</button></div>';
-  let h=backHead('Activités','/sport','<button class="btn-add" data-act="new-activity">+ Ajouter</button>');
+/* ---------- Onglet : Activités (le catalogue) ---------- */
+function sportActivitiesView(){
   const on=activeActivities(), off=(state.activities||[]).filter(a=>a.archived);
-  h+='<div class="section-title">Actives</div><div class="chip-wrap">'
-   +on.map(a=>'<button class="chip chip--act" data-act="edit-activity" data-key="'+a.key+'">'+a.emoji+' '+esc(a.label)+'</button>').join('')+'</div>';
+  const st=sportStats('year');
+  const used={}; st.byActivity.forEach(b=>used[b.key]=b);
+  let h='<div class="hint" style="margin:10px 4px 12px">Ce sont les activités proposées quand tu notes une séance. Touche l’une d’elles pour changer son nom, sa durée habituelle ou son intensité.</div>';
+  h+='<div class="section-title">Actives</div><div class="list">'
+   +on.map(a=>{ const u=used[a.key];
+     return '<div class="row" data-act="edit-activity" data-key="'+a.key+'">'
+      +'<div class="row-ic" style="background:color-mix(in srgb,'+a.color+' 22%,var(--bg-3))">'+a.emoji+'</div>'
+      +'<div class="row-main"><div class="row-title">'+esc(a.label)+'</div>'
+      +'<div class="row-sub"><span class="pill">'+(a.defaultDurationMin||45)+' min</span>'
+      +'<span class="pill">MET '+nf(a.met,1)+'</span>'
+      +(u?'<span>'+u.count+' '+plural(u.count,'séance')+' cette année</span>':'<span class="muted">jamais utilisée</span>')
+      +'</div></div>'+arrowHTML()+'</div>'; }).join('')+'</div>';
   if(off.length) h+='<div class="section-title">Masquées</div><div class="chip-wrap">'
    +off.map(a=>'<button class="chip chip--act" style="opacity:.5" data-act="edit-activity" data-key="'+a.key+'">'+a.emoji+' '+esc(a.label)+'</button>').join('')+'</div>';
-  h+='<div class="hint" style="margin-top:14px">Masquer une activité la retire des listes de saisie, sans toucher aux séances déjà enregistrées.</div>';
+  h+='<button class="btn btn--ghost btn--block" data-act="new-activity" style="margin-top:12px">+ Créer une activité</button>';
+  h+='<div class="hint" style="margin-top:12px">Masquer une activité la retire des listes de saisie, sans toucher aux séances déjà enregistrées.</div>';
   return h;
 }
 let AF=null;
@@ -3744,17 +4194,14 @@ function pillUndo(id){
   const i=(state.medIntakes||[]).findIndex(x=>x.id===id); if(i<0) return;
   state.medIntakes.splice(i,1); update();
 }
-/* Compte d'un jour, en ne retenant AUJOURD'HUI que les prises dont l'heure est passée :
-   afficher « 0 % » à huit heures du matin serait faux, et décourageant pour rien. */
+/* Compte d'un jour. L'HEURE NE COMPTE PAS : un complément pris à midi au lieu de
+   dix heures a été pris, point. Ce qui compte, c'est la journée. La journée en cours
+   est marquée « partielle » : elle s'affiche, mais ne rentre dans aucune statistique. */
 function pillDayCounts(date){
+  if(date>pillToday()) return {expected:0,taken:0,skipped:0,pending:0,partial:false};   // le futur ne se juge pas
   const box=pillboxForDate(date);
-  if(date>pillToday()) return {expected:0,taken:0,skipped:0};      // le futur ne se juge pas
-  if(date!==pillToday()) return {expected:box.counts.expected,taken:box.counts.taken,skipped:box.counts.skipped};
-  const nm=nowMin(), gr=state.settings.pillbox.lateAfterMin||60;
-  const passed=box.slots.filter(x=>!x.extra&&(x.estMin!==ANY_MIN?nm>x.estMin+gr:nm>=21*60));
-  return {expected:passed.length,
-    taken:passed.filter(x=>x.status==='taken').length,
-    skipped:passed.filter(x=>x.status==='skipped').length};
+  return {expected:box.counts.expected,taken:box.counts.taken,skipped:box.counts.skipped,
+    pending:box.counts.pending,partial:date===pillToday()};
 }
 function pillAdherence(days,endYMD){
   const end=endYMD||pillToday(), floor=state.settings.pillbox.floorDate;
@@ -3763,25 +4210,41 @@ function pillAdherence(days,endYMD){
     const d=addDayYMD(end,-k);
     if(floor&&d<floor) break;
     const c=pillDayCounts(d);
-    if(!c.expected) continue;
+    if(c.partial||!c.expected) continue;                 // la journée en cours n'est pas finie
     exp+=c.expected; tak+=Math.min(c.taken,c.expected); ski+=c.skipped; daysCounted++;
   }
   return {expected:exp,taken:tak,skipped:ski,days:daysCounted,pct:exp?Math.round(Math.min(100,tak/exp*100)):null};
 }
+/* La série ne se casse que sur un vrai oubli : une journée où rien n'a été pris alors
+   que quelque chose était prévu. Un « pas aujourd'hui » assumé ne casse rien, et la
+   journée en cours ne peut pas encore être un échec. */
+function pillDayOk(c){ return c.expected===0||c.taken>=c.expected-c.skipped; }
 function pillStreak(){
   const floor=state.settings.pillbox.floorDate;
   let d=pillToday(),n=0,guard=0;
-  const bt=pillboxForDate(d);
-  if(bt.counts.expected>0&&bt.counts.pending===0&&bt.counts.skipped===0) n++;
+  const ct=pillDayCounts(d);
+  if(ct.expected>0&&ct.pending===0&&pillDayOk(ct)) n++;       // aujourd'hui ne compte que s'il est déjà bouclé
   d=addDayYMD(d,-1);
   while(guard++<400){
     if(floor&&d<floor) break;
-    const b=pillboxForDate(d);
-    if(b.counts.expected===0){ d=addDayYMD(d,-1); continue; }
-    if(b.counts.pending>0||b.counts.skipped>0) break;
+    const c=pillDayCounts(d);
+    if(c.expected===0){ d=addDayYMD(d,-1); continue; }
+    if(!pillDayOk(c)) break;
     n++; d=addDayYMD(d,-1);
   }
   return n;
+}
+/* Les journées où il manque encore une case à cocher, dans les jours écoulés.
+   Le plus souvent ce n'est pas un oubli de prise : c'est un oubli de pointage. */
+function pillCatchUpDays(n){
+  const out=[], floor=state.settings.pillbox.floorDate;
+  for(let k=1;k<=(n||3);k++){
+    const d=addDayYMD(pillToday(),-k);
+    if(floor&&d<floor) break;
+    const c=pillDayCounts(d);
+    if(c.expected>0&&c.pending>0) out.push({date:d,pending:c.pending,expected:c.expected,taken:c.taken});
+  }
+  return out;
 }
 function pillSlotRow(slot,compact){
   const done=slot.status==='taken', skip=slot.status==='skipped', snz=slot.status==='snoozed';
@@ -3797,7 +4260,7 @@ function pillSlotRow(slot,compact){
     +'<div class="row-main"><div class="row-title">'+esc(slot.product.name)
     +(slot.dose?' <span class="pill">'+esc(slot.dose)+'</span>':'')+'</div>'
     +'<div class="row-sub">'+sub
-    +(slot.late?' <span class="badge badge--todo">en retard</span>':'')
+
     +(slot.anyway?' <span class="badge badge--info">quand même</span>':'')
     +(slot.extra?' <span class="badge badge--info">en plus</span>':'')+'</div></div>';
   if(done||skip){
@@ -3828,13 +4291,12 @@ function screenPillbox(){
   const tab=state.ui.pillTab||'jour';
   const date=pillCtxDate();
   let h=backHead('Pilulier','/plus','<button class="btn-add" data-act="pill-new-product">+ Produit</button>');
-  h+='<div class="subtabs">'+[['jour',"Aujourd'hui"],['semaine','Semaine'],['produits','Produits'],['stats','Stats']].map(o=>
+  h+='<div class="subtabs">'+[['jour',"Aujourd'hui"],['semaine','Ma semaine'],['produits','Mes produits']].map(o=>
     '<button class="subtab'+(tab===o[0]?' is-active':'')+'" data-act="pill-tab" data-t="'+o[0]+'">'+esc(o[1])
     +(o[0]==='jour'&&pillPendingCount()>0?'<span class="pastille--num">'+pillPendingCount()+'</span>':'')+'</button>').join('')+'</div>';
   if(tab==='jour') h+=pillDayView(date);
-  else if(tab==='semaine') h+=pillWeekView();
   else if(tab==='produits') h+=pillProductsView();
-  else h+=pillStatsView();
+  else h+=pillWeekView()+pillStatsView();
   return h;
 }
 function pillDayView(date){
@@ -3843,7 +4305,16 @@ function pillDayView(date){
       '<button class="btn btn--primary" data-act="pill-new-product">+ Ajouter un produit</button>');
   const box=pillboxForDate(date); PILL_BOX=box;
   const isToday=date===pillToday();
-  let h='<div class="flex aic" style="justify-content:center;gap:10px;margin:2px 0 12px">'
+  let h='';
+  if(isToday){
+    const cu=pillCatchUpDays(3);
+    if(cu.length) h+='<div class="card" style="margin-bottom:12px"><div class="row-title">Rien de coché '
+      +(cu.length===1?'le '+esc(fmtDateShort(cu[0].date)):'sur '+cu.length+' jours récents')+'</div>'
+      +'<div class="small muted" style="margin:4px 0 10px">Le plus souvent, c’est le pointage qu’on oublie, pas la prise. Tu peux rattraper d’un geste.</div>'
+      +'<div class="chip-wrap">'+cu.map(c=>'<button class="chip chip--act" data-act="pill-goto-day" data-date="'+c.date+'">'
+        +esc(capit(fmtDayLabel(c.date)))+' · '+c.pending+' à cocher</button>').join('')+'</div></div>';
+  }
+  h+='<div class="flex aic" style="justify-content:center;gap:10px;margin:2px 0 12px">'
    +'<button class="chip" data-act="pill-day" data-d="-1">‹</button>'
    +'<b style="min-width:150px;text-align:center;text-transform:capitalize">'+esc(fmtDayLabel(date))+'</b>'
    +(isToday?'<span class="chip" style="opacity:.35">›</span>':'<button class="chip" data-act="pill-day" data-d="1">›</button>')
@@ -3933,10 +4404,14 @@ function pillWeekView(){
     });
     h+='</div>';
   });
-  let exp=0,tak=0;
-  days.forEach(d=>{ const c=pillDayCounts(d); exp+=c.expected; tak+=c.taken; });
-  h+='<div class="small muted center" style="margin-top:10px">Observance de la semaine · '
-   +(exp?Math.round(tak/exp*100)+' % ('+tak+'/'+exp+')':'pas encore de prise attendue')+'</div></div>';
+  let exp=0,tak=0,enCours=0;
+  days.forEach(d=>{ const c=pillDayCounts(d);
+    if(c.partial){ enCours=c.expected-c.taken; return; }        // le jour en cours ne se juge pas
+    exp+=c.expected; tak+=c.taken; });
+  h+='<div class="small muted center" style="margin-top:10px">'
+   +(exp?'Jours écoulés de la semaine · '+Math.round(tak/exp*100)+' % ('+tak+'/'+exp+')':'pas encore de prise attendue')
+   +(enCours>0?' · '+enCours+' en attente aujourd’hui':'')+'</div>'
+   +'<div class="hint" style="margin-top:8px">L’heure n’entre pas dans le calcul : une prise cochée le soir pour le matin compte pareil. Touche une case pour rattraper un jour.</div></div>';
   return h;
 }
 function pillProductsView(){
@@ -3961,7 +4436,7 @@ function pillProductsView(){
 }
 function pillProductStats(productId,days){
   const end=pillToday(); let exp=0,tak=0; const times=[];
-  for(let k=0;k<days;k++){
+  for(let k=1;k<=days;k++){                       // on part d'hier : le jour en cours n'est pas fini
     const d=addDayYMD(end,-k);
     if(state.settings.pillbox.floorDate&&d<state.settings.pillbox.floorDate) break;
     const b=pillboxForDate(d);
@@ -3971,24 +4446,39 @@ function pillProductStats(productId,days){
   return {expected:exp,taken:tak,pct:exp?Math.round(tak/exp*100):null,avgTimeMin:times.length?Math.round(meanOf(times)):null};
 }
 function pillStatsView(){
-  const a7=pillAdherence(7), a30=pillAdherence(30);
-  let h='<div class="stats" style="margin-top:12px">'
-   +statCard('7 jours',a7.pct!=null?a7.pct+' %':'—','','')
-   +statCard('30 jours',a30.pct!=null?a30.pct+' %':'—','','')
-   +statCard('Série',pillStreak()+' j','','')
-   +'</div>';
+  const a7=pillAdherence(7), a30=pillAdherence(30), st=pillStreak();
+  let h='<div class="section-title">Tes chiffres</div>'
+   +'<div class="stats">'
+   +statCard('7 jours',a7.pct!=null?a7.pct+' %':'—',a7.days?a7.days+' '+plural(a7.days,'jour')+' écoulé'+(a7.days>1?'s':''):'','')
+   +statCard('30 jours',a30.pct!=null?a30.pct+' %':'—',a30.days?a30.days+' '+plural(a30.days,'jour'):'','')
+   +statCard('Série',st+' j','sans oubli','')
+   +'</div>'
+   +'<div class="hint" style="margin:8px 4px 0">Seules les journées terminées comptent, et l’heure de la prise n’entre jamais dans le calcul.</div>';
   const prods=(state.meds||[]).filter(m=>!m.archived);
   if(!prods.length) return h;
   const rows=prods.map(m=>({m:m,st:pillProductStats(m.id,30)})).filter(r=>r.st.expected>0)
     .sort((a,b)=>(a.st.pct||0)-(b.st.pct||0));
   if(rows.length){
-    h+='<div class="section-title">Par produit (30 jours)</div><div class="chart-bars">'
-     +rows.map(r=>'<div><div class="cbtop"><span>'+(r.m.icon||'💊')+' '+esc(r.m.name)+'</span>'
-       +'<span class="tnum muted">'+r.st.taken+'/'+r.st.expected+' · '+(r.st.pct!=null?r.st.pct+' %':'—')+'</span></div>'
-       +'<div class="chart-bar-track"><div class="chart-bar-fill" data-bar="'+((r.st.pct||0)/100).toFixed(2)+'" style="background:'+(r.m.color||'var(--acc)')+'"></div></div>'
-       +'<div class="small muted" style="margin-top:4px">'+esc(r.st.pct>=90?'Impeccable.':(r.st.pct>=70?'Bien, quelques oublis.':'Difficile à tenir — le créneau est peut-être mal choisi ?'))
-       +(r.st.avgTimeMin!=null?' En général vers '+minToHHMM(r.st.avgTimeMin)+'.':'')+'</div></div>').join('')
+    /* Une seule phrase de commentaire, pour le produit le plus difficile à tenir.
+       Répéter « difficile à tenir » sous chacune des onze lignes ne dit rien de plus
+       et donne à l'écran un ton de bulletin scolaire. */
+    const jours=rows.length?Math.max.apply(null,rows.map(r=>r.st.expected)):0;
+    h+='<div class="section-title">Par produit</div><div class="card"><div class="chart-bars">'
+     +rows.map(r=>'<div><div class="cbtop"><span class="grow" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+       +(r.m.icon||'💊')+' '+esc(r.m.name)+'</span>'
+       +'<span class="tnum muted nowrap">'+r.st.taken+'/'+r.st.expected+' · '+(r.st.pct!=null?r.st.pct+' %':'—')
+       +(r.st.avgTimeMin!=null?' · '+minToHHMM(r.st.avgTimeMin):'')+'</span></div>'
+       +'<div class="chart-bar-track"><div class="chart-bar-fill" data-bar="'+((r.st.pct||0)/100).toFixed(2)+'" style="background:'+(r.m.color||'var(--acc)')+'"></div></div></div>').join('')
      +'</div>';
+    const pire=rows[0], best=rows[rows.length-1];
+    let mot;
+    if(best.st.pct>=90&&pire.st.pct>=70) mot='Tout tient bien. '+esc(best.m.name)+' est ton plus régulier.';
+    else if(pire.st.pct<50) mot='C’est '+esc(pire.m.name)+' qui passe le plus souvent à la trappe'
+      +(pire.st.avgTimeMin!=null?' — tu le prends en général vers '+minToHHMM(pire.st.avgTimeMin)+', peut-être que le créneau prévu ne correspond pas à ta vraie journée.':'.');
+    else mot='Rien d’alarmant : '+esc(pire.m.name)+' est le moins régulier, le reste suit.';
+    h+='<div class="small muted" style="margin-top:12px;line-height:1.5">'+mot
+     +(jours?' Calculé sur '+jours+' '+plural(jours,'journée')+' terminée'+(jours>1?'s':'')+'.':'')+'</div>'
+     +'<div class="hint" style="margin-top:8px">Un créneau peut se déplacer : touche le produit, puis son horaire.</div></div>';
   }
   (state.medGroups||[]).forEach(g=>{
     const split=pillGroupSplit(g.id,60);
@@ -4362,6 +4852,8 @@ function screenPlus(){
   const items=[
     ['/objectif','🎯','Mon objectif','poids cible, date estimée'],
     ['/analyse','🔬','Analyse','comprendre mon corps'],
+    ['/simulateur','🧮','Simulateur','où j’en serai, et quand'],
+    ['/astuces','🧰','Boîte à outils','repères et astuces'],
     ['/paliers','🏅','Paliers','ce que j’ai déjà franchi'],
     ['/motivations','💭','Mes raisons','pourquoi je fais ça']
   ];
@@ -4542,27 +5034,47 @@ function screenAnalyse(){
   } else h+='<div class="card"><div class="small muted">Il faut au moins deux semaines de mesures de composition pour dire quoi que ce soit d’honnête. On y sera bientôt.</div></div>';
   }
 
-  /* Bilan énergétique */
+  /* Bilan énergétique — le coeur de l'écran : ton point neutre, d'où tout découle. */
   h+='<div class="section-title">Ton énergie</div>';
   const bmr=bmrMifflin(refWeight().kg,state.settings.profile.heightCm,profileAge(),state.settings.profile.sex);
-  const tdee=tdeeTheo(), obs=tdeeObserved(), scale=lastScaleKcal();
+  const af=activityFactor(), tdee=tdeeTheo(), obs=tdeeObserved(), scale=lastScaleKcal(), maint=maintenanceKcal();
   const showScale=metricOn('kcalOut')&&scale!=null;
-  h+='<div class="card"><div class="stats'+(showScale?'':' stats-2')+'">'
-   +statCard('Métabolisme',bmr!=null?nf(bmr,0):'—','au repos','')
-   +statCard('Dépense estimée',tdee!=null?nf(tdee,0):'—',palOf(currentPal()).label,'')
-   +(showScale?statCard('Balance',nf(scale,0),'ce qu’elle affiche',''):'')
-   +'</div>';
-  if(showScale&&bmr!=null){
-    h+='<div class="small muted" style="margin-top:10px">Ta balance annonce '+nf(scale,0)+' kcal/jour, ce qui suppose un niveau d’activité de '+nf(scale/bmr,2)
-     +' — l’équivalent de cinq à six séances par semaine. Une balance ne mesure pas ta dépense : elle l’estime à partir de ton poids.</div>';
+  if(maint.kcal!=null){
+    h+='<div class="card card--accent tap" data-act="go" data-route="/simulateur">'
+     +'<div class="flex between aic"><div><div class="stat-label">Ton point neutre</div>'
+     +'<div class="hero-value tnum" style="font-size:34px;margin:2px 0 0"><span data-count="'+maint.kcal+'" data-dec="0">'+nf(maint.kcal,0)+'</span><span class="hero-unit">kcal/j</span></div></div>'
+     +(maint.source==='observé'?'<span class="badge badge--ok">mesuré sur toi</span>':'<span class="badge">estimé</span>')+'</div>'
+     +'<div class="small muted" style="margin-top:8px">C’est le nombre de calories où ton poids ne bouge ni dans un sens ni dans l’autre. En dessous, tu perds ; au-dessus, tu prends. '+esc(capit(maint.why))+'.</div>'
+     +'<div class="btn btn--ghost btn--block" style="margin-top:12px">🧮 Ouvrir le simulateur ›</div></div>';
   }
-  if(obs.ok) h+='<div class="insight" style="margin-top:12px"><div class="insight-ic">🔥</div><div class="insight-txt">'
-   +'D’après ce que tu manges (<strong>'+nf(obs.intake,0)+' kcal/jour</strong> en moyenne) et ce que tu perds ('+fmtKg(-obs.kgWeek)+'/semaine), ta dépense réelle tourne autour de <strong>'+nf(obs.kcal,0)+' kcal par jour</strong>.'
-   +'</div></div><div class="hint" style="margin-top:6px">Calcul indirect : si tu sous-estimes tes portions, ce chiffre est sous-estimé aussi.</div>';
-  else if(state.settings.modules.kcalIn) h+='<div class="hint" style="margin-top:10px">Pour calculer ta dépense réelle, il faut au moins vingt jours de calories et douze pesées sur les vingt-huit derniers jours.</div>';
+  h+='<div class="card" style="margin-top:12px"><div class="row-title">D’où vient ce chiffre</div>'
+   +'<div class="calc-list" style="margin-top:10px">'
+   +'<div class="calc-row"><span class="calc-k">Métabolisme au repos<span class="calc-sub">ton corps immobile, 24 h</span></span><span class="calc-v tnum">'+(bmr!=null?nf(bmr,0):'—')+'</span></div>'
+   +(af.manual
+     ?'<div class="calc-row"><span class="calc-k">Niveau d’activité<span class="calc-sub">réglage manuel</span></span><span class="calc-v tnum">×'+nf(af.f,2)+'</span></div>'
+     :'<div class="calc-row"><span class="calc-k">'+esc(af.job.label)+'<span class="calc-sub">tes journées hors sport</span></span><span class="calc-v tnum">×'+nf(af.base,2)+'</span></div>'
+      +'<div class="calc-row"><span class="calc-k">Tes séances<span class="calc-sub">'+(af.sport>0?nf(sportKcalPerDay(28),0)+' kcal/jour en moyenne':'aucune séance sur 28 jours')+'</span></span><span class="calc-v tnum">'+(af.sport>0?'+'+nf(af.sport,2):'—')+'</span></div>')
+   +'<div class="calc-row is-total"><span class="calc-k">Dépense estimée</span><span class="calc-v tnum">'+(tdee!=null?nf(tdee,0)+' kcal':'—')+'</span></div>'
+   +(obs.ok?'<div class="calc-row is-total"><span class="calc-k">Dépense <b>observée</b><span class="calc-sub">ce que tes chiffres racontent vraiment</span></span><span class="calc-v tnum">'+nf(obs.kcal,0)+' kcal</span></div>':'')
+   +'</div>';
+  if(obs.ok){
+    const ecart=obs.kcal-tdee;
+    h+='<div class="small muted" style="margin-top:10px;line-height:1.5">Tu manges <b>'+nf(obs.intake,0)+' kcal/jour</b> en moyenne et tu perds '+fmtKg(-obs.kgWeek)+' par semaine. '
+     +'Ces deux chiffres ensemble donnent ta dépense réelle : <b>'+nf(obs.kcal,0)+' kcal</b>'
+     +(Math.abs(ecart)>150?(', soit '+nf(Math.abs(ecart),0)+' de '+(ecart>0?'plus':'moins')+' que la formule. C’est le tien qui compte.'):'. La formule tombe juste, c’est plutôt bon signe.')+'</div>'
+     +'<div class="hint" style="margin-top:8px">Calcul indirect : si tu sous-estimes tes portions dans Yazio, ce chiffre est sous-estimé d’autant.</div>';
+  }
+  else if(state.settings.modules.kcalIn) h+='<div class="hint" style="margin-top:10px">Pour mesurer ta dépense réelle il faut quatorze jours de calories et dix pesées sur les vingt-huit derniers jours — tu en as '+(obs.nK||0)+' et '+(obs.nW||0)+'.</div>';
+  if(showScale&&bmr!=null){
+    h+='<div class="divider"></div><div class="small muted">Ta balance annonce '+nf(scale,0)+' kcal/jour, ce qui supposerait un facteur d’activité de '+nf(scale/bmr,2)
+     +' — un métier physique <i>plus</i> du sport tous les jours. Une balance ne mesure pas ta dépense : elle la devine à partir de ton poids.</div>';
+  }
   h+='</div>';
   if(!state.settings.modules.kcalIn) h+='<div class="card"><div class="small muted">Active le module <b>Calories mangées</b> pour découvrir ta dépense réelle — c’est le calcul le plus parlant de l’app.</div>'
    +'<button class="btn btn--ghost btn--block" data-act="mod-on" data-k="kcalIn" style="margin-top:10px">Activer les calories</button></div>';
+
+  /* Protéines : le levier le plus déterminant en déficit, donc juste après l'énergie. */
+  h+=analyseProteines();
 
   /* Jour de la semaine */
   const wd=weekdayEffect();
@@ -4586,8 +5098,312 @@ function screenAnalyse(){
    +'<div class="small muted" style="margin-top:4px">Ton poids bouge naturellement de ±'+fmtKg(sg.sigma)+' d’un jour à l’autre'
    +(sg.estimated?' (mesuré sur tes '+sg.n+' dernières pesées)':' (estimation par défaut)')
    +'. En dessous de cet écart, ce n’est pas un vrai changement.</div></div>';
-  h+='<div class="hint" style="margin-top:14px">Élan décrit tes chiffres. Pour toute question de santé, parles-en à un professionnel.</div>';
+  h+='<button class="btn btn--ghost btn--block" data-act="go" data-route="/astuces" style="margin-top:14px">🧰 Ma boîte à outils</button>';
+  h+='<div class="hint" style="margin-top:12px">Élan décrit tes chiffres. Pour toute question de santé, parles-en à un professionnel.</div>';
   return h;
+}
+
+/* ============================================================
+   ÉCRAN : SIMULATEUR
+   ------------------------------------------------------------
+   « Comme un calcul de prêt » : on règle une mensualité (les
+   calories du jour) et on voit la date de fin. Le métabolisme
+   baissant avec le poids, la simulation est refaite jour par
+   jour — une projection en ligne droite ment toujours un peu.
+   ============================================================ */
+function simIntake(){
+  const m=maintenanceKcal();
+  if(state.ui.simIntake==null){
+    const obs=tdeeObserved();
+    const base=(obs.ok&&obs.intake)?obs.intake:(m.kcal!=null?m.kcal-500:2000);
+    state.ui.simIntake=clamp(Math.round(base/50)*50,800,6000);
+  }
+  return state.ui.simIntake;
+}
+function simTarget(){
+  const t=state.ui.simTarget!=null?state.ui.simTarget:targetWeight();
+  return t!=null?t:null;
+}
+/* « 31 oct. » ne veut rien dire quand l'année n'est pas l'année en cours. */
+function fmtDateFar(d){
+  if(!d) return '—';
+  return d.slice(0,4)===isoToday().slice(0,4)?fmtDateShort(d)
+    :capit(parseYMD(d).toLocaleDateString('fr-FR',{month:'short',year:'numeric'}));
+}
+function screenSimulateur(){
+  let h=backHead('Simulateur','/analyse');
+  const w=refWeight().kg, m=maintenanceKcal();
+  if(w==null||!state.settings.profile.heightCm)
+    return h+empty('🧮','Il me manque deux chiffres','Ta taille et une pesée suffisent pour lancer la simulation.',
+      '<button class="btn btn--primary" data-act="go" data-route="/reglages">Compléter mon profil</button>');
+  if(m.kcal==null)
+    return h+empty('🧮','Point neutre indisponible','Renseigne ta taille et ton année de naissance dans les réglages.',
+      '<button class="btn btn--primary" data-act="go" data-route="/reglages">Aller aux réglages</button>');
+
+  const intake=simIntake(), tg=simTarget();
+  const sim=simulate(intake,{targetKg:tg});
+  const neutral=sim.ok?sim.tdee0:m.kcal;
+  const gap=intake-neutral;
+
+  /* Le point neutre : la vraie information de cet écran. */
+  h+='<div class="card card--accent"><div class="stat-label">Ton point neutre</div>'
+   +'<div class="hero-value tnum" style="font-size:38px;margin:2px 0 0"><span data-count="'+neutral+'" data-dec="0">'+nf(neutral,0)+'</span><span class="hero-unit">kcal/j</span></div>'
+   +'<div class="small muted" style="margin-top:6px">À ce niveau, ton poids ne bouge plus. '
+   +esc(m.source==='observé'?'Mesuré sur toi : '+m.why+'.':'Estimé : '+m.why+'. Note tes calories pendant trois semaines et ce chiffre deviendra le tien.')+'</div>'
+   +(m.source==='observé'?'<div class="badge badge--ok" style="margin-top:8px">calculé sur tes données</div>':'')
+   +'</div>';
+
+  /* Le curseur : ce qu'on mange chaque jour. */
+  h+='<div class="card" style="margin-top:12px">'
+   +'<div class="flex between aic"><div class="row-title">Ce que je mange par jour</div>'
+   +'<div class="tnum" style="font-size:22px;font-weight:700"><span id="simVal">'+nf(intake,0)+'</span><span class="muted small"> kcal</span></div></div>'
+   +'<div class="stepper" style="margin-top:10px">'
+   +'<button class="step-btn" data-act="sim-delta" data-d="-100">−100</button>'
+   +'<input class="range" type="range" id="simRange" min="1000" max="'+Math.max(4000,neutral+800)+'" step="25" value="'+intake+'" data-neutral="'+neutral+'" aria-label="Calories par jour">'
+   +'<button class="step-btn" data-act="sim-delta" data-d="100">+100</button></div>'
+   +'<div class="chip-wrap" style="margin-top:10px">'
+   +[['Maintien',0],['Doux −250',-250],['Classique −500',-500],['Rapide −750',-750]].map(o=>{
+      const v=clamp(Math.round((neutral+o[1])/25)*25,800,6000);
+      return '<button class="chip'+(Math.abs(v-intake)<13?' is-active':'')+'" data-act="sim-set" data-v="'+v+'">'+esc(o[0])+'</button>'; }).join('')
+   +'</div>'
+   +'<div class="sim-gap '+(gap<0?'is-down':(gap>0?'is-up':''))+'" id="simGap">'
+   +(Math.abs(gap)<25?'Tu es à l’équilibre : ton poids reste stable.'
+     :(gap<0?'<b>'+nf(-gap,0)+' kcal</b> de moins que ton point neutre chaque jour.'
+            :'<b>'+nf(gap,0)+' kcal</b> de plus que ton point neutre chaque jour.'))+'</div>'
+   +'</div>';
+
+  if(sim.ok){
+    const perWeek=sim.kgWeek, perMonth=perWeek*4.345;
+    h+='<div class="stats stats-2" style="margin-top:12px">'
+     +statCard('Par semaine',sgnKg(perWeek),Math.abs(perWeek)>0.005?rateWord(perWeek):'stable',deltaClass(perWeek,-1))
+     +statCard('Par mois',sgnKg(perMonth),'',deltaClass(perMonth,-1))
+     +statCard('Dans 3 mois',fmtKg(sim.w90),(sim.etaDays!=null&&sim.etaDays<=90)?'objectif atteint':fmtDateShort(addDayYMD(isoToday(),90)),'')
+     +statCard('Dans 1 an',fmtKg(sim.w365),(sim.etaDays!=null&&sim.etaDays<=365)?'objectif atteint':fmtDateShort(addDayYMD(isoToday(),365)),'')
+     +'</div>';
+
+    /* La courbe de projection : le vrai « tableau d'amortissement ». */
+    const pts=sim.series.filter(p=>p.date<=addDayYMD(isoToday(),Math.min(1100,(sim.etaDays!=null?sim.etaDays+20:400))));
+    const past=trendSeries().filter(x=>x.date>=addDayYMD(isoToday(),-60)).map(x=>({date:x.date,v:x.trend}));
+    h+='<div class="chart-card" style="margin-top:12px"><div class="chart-title">Ta trajectoire à ce rythme</div>'
+     +chartSlot(w2=>lineChart([
+        {key:'passe',label:'Jusqu’ici',color:'var(--m-poids)',unit:'kg',dec:1,points:past},
+        {key:'proj',label:'Projection',color:'var(--acc)',unit:'kg',dec:1,points:pts,dash:'5 4',dots:false}],
+        {w:w2,h:CH_H,from:past.length?past[0].date:isoToday(),to:pts[pts.length-1].date,id:'sim',scrub:false,
+         goal:tg!=null?{v:tg,label:'Objectif '+nf(tg,1)+NBSP+'kg'}:null,yUnit:'kg'}),{h:CH_H})
+     +'<div class="chart-legend"><span class="legend-item" style="color:var(--m-poids)"><i></i>ta tendance</span>'
+     +'<span class="legend-item" style="color:var(--acc)"><i class="dash"></i>projection</span></div></div>';
+
+    if(tg!=null){
+      h+='<div class="card card--accent" style="margin-top:12px"><div class="stat-label">Objectif '+fmtKg(tg)+'</div>';
+      if(sim.etaDays!=null)
+        h+='<div class="row-title" style="font-size:19px;margin-top:2px">'+esc(capit(fmtDateLong(sim.etaDate)))+'</div>'
+         +'<div class="small muted" style="margin-top:4px">dans '+esc(humanDuration(sim.etaDays))+' · '
+         +fmtKg(Math.abs(w-tg))+' à faire</div>';
+      else if(Math.abs(gap)<25) h+='<div class="small muted">À l’équilibre, tu n’avances ni ne recules. Baisse un peu la barre pour voir une date apparaître.</div>';
+      else if(gap>0) h+='<div class="small muted">À ce niveau, tu prends du poids : l’objectif s’éloigne au lieu de se rapprocher.</div>';
+      else h+='<div class="small muted">Plus de cinq ans à ce rythme — autant dire que le poids se stabilisera avant. Creuse un peu l’écart pour voir une date apparaître.</div>';
+      h+='<button class="btn-add" data-act="edit-goal" style="margin-top:8px">Changer d’objectif</button></div>';
+    } else {
+      h+='<div class="card" style="margin-top:12px"><div class="small muted">Fixe-toi un objectif pour voir une date d’arrivée apparaître ici.</div>'
+       +'<button class="btn btn--primary btn--block" data-act="edit-goal" style="margin-top:10px">Choisir mon objectif</button></div>';
+    }
+
+    /* Le garde-fou : au-delà de 1 % du poids par semaine, la part de muscle perdue monte. */
+    const pctW=Math.abs(perWeek)/Math.max(1,w)*100;
+    if(perWeek<0&&pctW>1.05)
+      h+='<div class="insight insight--neutral" style="margin-top:12px"><div class="insight-ic">🐢</div><div class="insight-txt">'
+       +'À ce niveau tu perdrais <strong>'+nf(pctW,1)+' % de ton poids par semaine</strong>. Au-delà de 1 %, la part de masse maigre perdue augmente mécaniquement, et la faim devient difficile à tenir. '
+       +'Pour toi, la zone confortable va de '+fmtKg(w*0.005)+' à '+fmtKg(w*0.01)+' par semaine.'
+       +'</div></div>';
+    else if(perWeek<0&&pctW>=0.4)
+      h+='<div class="insight" style="margin-top:12px"><div class="insight-ic">✅</div><div class="insight-txt">'
+       +'<strong>'+nf(pctW,2)+' % de ton poids par semaine</strong> : c’est exactement la zone qui se tient sur la durée.'
+       +'</div></div>';
+
+    /* Le « tableau d'amortissement » : trois scénarios côte à côte. */
+    h+='<div class="section-title">Et si je changeais ?</div><div class="card"><div class="sim-table">'
+     +'<div class="sim-row sim-head"><span>kcal/jour</span><span>par semaine</span><span>'+(tg!=null?'objectif':'dans 6 mois')+'</span></div>'
+     +[-750,-500,-350,-250,0,250].map(dv=>{
+        const v=clamp(Math.round((neutral+dv)/25)*25,800,6000);
+        const s2=simulate(v,{targetKg:tg});
+        if(!s2.ok) return '';
+        const right=tg!=null?(s2.etaDays!=null?fmtDateFar(s2.etaDate):'jamais'):fmtKg(s2.w180);
+        return '<div class="sim-row'+(Math.abs(v-intake)<13?' is-cur':'')+'" data-act="sim-set" data-v="'+v+'">'
+         +'<span class="tnum"><b>'+nf(v,0)+'</b></span>'
+         +'<span class="tnum '+deltaClass(s2.kgWeek,-1)+'">'+sgnKg(s2.kgWeek)+'</span>'
+         +'<span class="tnum muted">'+esc(right)+'</span></div>'; }).join('')
+     +'</div><div class="hint" style="margin-top:10px">Touche une ligne pour l’essayer.</div></div>';
+  }
+
+  h+='<div class="card" style="margin-top:12px"><div class="row-title">🧱 Le seul chiffre à retenir</div>'
+   +'<div class="small muted" style="margin-top:6px;line-height:1.55">Un kilo de graisse, c’est environ <b>7 700 kcal</b>. Pour en perdre un par semaine, il faut donc creuser à peu près <b>1 100 kcal par jour</b> — c’est beaucoup. '
+   +'À <b>−500 kcal par jour</b>, tu perds environ <b>0,45 kg par semaine</b>, soit près de 2 kg par mois. C’est le rythme que la plupart des gens tiennent sur la durée.</div></div>';
+  h+='<div class="hint" style="margin-top:12px">Une projection n’est pas une promesse : l’eau, le sel et le glycogène font zigzaguer la balance autour de cette ligne. C’est la direction qui compte.</div>';
+  return h;
+}
+
+/* ============================================================
+   ÉCRAN : BOÎTE À OUTILS
+   ------------------------------------------------------------
+   L'écran Aide explique l'application. Celui-ci explique le
+   sujet : ce qui fait bouger une balance, ce qui n'en fait pas,
+   et quoi faire quand plus rien ne bouge. Chaque repère est
+   chiffré AVEC les données de l'utilisateur quand c'est possible
+   — un conseil générique se lit une fois, un conseil qui parle
+   de tes 109 kg se relit. Aucun conseil médical, aucune calorie
+   prescrite : on décrit, on n'ordonne pas.
+   ============================================================ */
+function tipCard(o){
+  return '<details class="acc"'+(o.open?' open':'')+'>'
+   +'<summary class="acc-sum"><span class="acc-ic">'+o.emoji+'</span>'
+   +'<span class="acc-t"><b>'+esc(o.title)+'</b>'+(o.badge?'<span class="acc-b">'+esc(o.badge)+'</span>':'')+'</span>'
+   +'<span class="acc-ch" aria-hidden="true"></span></summary>'
+   +'<div class="acc-body">'+o.body+'</div></details>';
+}
+function screenAstuces(){
+  let h=backHead('Boîte à outils','/plus');
+  h+='<div class="hint" style="margin-bottom:12px">Des repères simples, classés selon là où tu en es. Touche un titre pour le déplier. Rien ici n’est une prescription — juste ce qu’on sait de la façon dont un corps réagit.</div>';
+  const T=[];
+  const ref=refWeight().kg, rate=bestRate(), pl=detectPlateau(), sg=noiseSigma();
+  const pctWeek=(rate!=null&&ref)?100*(-rate)/ref:null;
+  const weeks=Math.floor((sinceStartDays()||0)/7);
+
+  /* 1. Le palier, en tête quand il est là : c'est le moment où on abandonne. */
+  if(pl.isPlateau){
+    T.push({p:100,emoji:'🪨',title:'Ton poids fait une pause',badge:pl.sinceDays+' jours',open:true,body:
+      '<p>Un palier n’est pas un arrêt de la perte de graisse : c’est presque toujours de l’eau qui prend la place. '
+      +'Le corps garde plus d’eau quand le stress monte, quand on mange plus salé, ou quand un muscle a travaillé dur.</p>'
+      +'<p><b>Quatre choses à regarder, dans cet ordre :</b></p>'
+      +'<ol class="tip-ol"><li>Tes <b>portions réelles</b>. Les quantités estimées dérivent avec le temps, sans qu’on s’en rende compte. Repeser ce qu’on mange pendant trois jours suffit souvent à tout expliquer.</li>'
+      +'<li>Ton <b>tour de taille</b>. Il continue souvent de baisser quand la balance ne bouge plus. C’est la meilleure preuve que ça avance.</li>'
+      +'<li>Tes <b>pas</b>. Quand on mange moins, on bouge spontanément moins. C’est automatique et invisible.</li>'
+      +'<li>Le <b>temps</b>. Dix à quatorze jours de plateau, c’est banal. Ne change rien avant.</li></ol>'
+      +'<p class="tip-note">Ton bruit naturel est de ±'+fmtKg(sg.sigma)+' d’un jour à l’autre : en dessous, il ne se passe rien de réel.</p>'
+      +'<button class="btn btn--ghost btn--block" data-act="go" data-route="/courbes" style="margin-top:10px">Voir ma courbe</button>'});
+  }
+  /* 2. Protéines : le seul levier alimentaire vraiment déterminant en déficit. */
+  const pt=proteinTarget(), ps=proteinStats(14);
+  if(pt) T.push({p:95,emoji:'🥩',title:'Tes protéines',badge:'≈ '+pt.g+' g/jour',open:!pl.isPlateau,body:
+    '<p>En déficit, le corps pioche dans la graisse <i>et</i> dans le muscle. Manger assez de protéines est ce qui déplace le curseur vers la graisse. '
+    +'C’est aussi ce qui cale le mieux : à calories égales, un repas riche en protéines tient plus longtemps.</p>'
+    +'<p>Pour toi, cela représente environ <b>'+pt.g+' g par jour</b> (1,6 g par kilo de poids de forme, estimé à '+pt.basisKg+' kg). '
+    +'Yazio affiche ce chiffre : tu peux le noter ici chaque soir avec tes calories.</p>'
+    +(ps.ok?'<p class="tip-note">Sur tes '+ps.n+' derniers jours renseignés : <b>'+ps.mean+' g</b> en moyenne, soit '+ps.pct+' % de la cible. '
+       +(ps.mean>=pt.g*0.9?'C’est bien.':'Il y a de la marge — un yaourt grec, un œuf ou 100 g de blanc de poulet valent chacun 15 à 25 g.')+'</p>'
+     :'<p class="tip-note">Tu ne notes pas encore tes protéines. C’est la mesure la plus utile après les calories.</p>'
+      +'<button class="btn btn--ghost btn--block" data-act="metric-on" data-k="protIn" style="margin-top:10px">Suivre mes protéines</button>')
+    +'<p class="tip-note">Repères : 100 g de poulet ≈ 23 g · un œuf ≈ 6 g · un yaourt grec ≈ 10 g · 100 g de thon ≈ 25 g · une dose de whey ≈ 20 à 25 g.</p>'});
+  /* 3. Le rythme. */
+  T.push({p:90,emoji:'🐢',title:'À quelle vitesse perdre',badge:pctWeek!=null?nf(pctWeek,1)+' %/sem.':null,body:
+    '<p>La fourchette qui tient sur la durée va de <b>0,5 à 1 % de ton poids par semaine</b>. '
+    +(ref?'Pour toi aujourd’hui, cela fait <b>'+fmtKg(ref*0.005)+' à '+fmtKg(ref*0.01)+' par semaine</b>.':'')+'</p>'
+    +'<p>Plus vite, ce n’est pas « mieux » : la part de muscle perdue augmente, la faim aussi, et le rebond guette. Plus lentement, c’est parfaitement valable — c’est même souvent ce qui reste.</p>'
+    +(pctWeek!=null?'<p class="tip-note">Ton rythme actuel : <b>'+nf(pctWeek,2)+' % par semaine</b>. '
+       +(pctWeek>1.2?'C’est rapide. Si tu as faim en permanence, remonte un peu ton assiette : tu perdras presque autant, en te sentant mieux.'
+        :(pctWeek<0.15?'C’est lent en ce moment. Ce n’est pas grave si ça te convient — la régularité bat la vitesse.'
+        :'Tu es exactement dans la bonne zone.'))+'</p>':'')
+    +'<button class="btn btn--ghost btn--block" data-act="go" data-route="/simulateur" style="margin-top:10px">🧮 Essayer un autre rythme</button>'});
+  /* 4. Peser juste. */
+  T.push({p:85,emoji:'⚖️',title:'Peser dans les mêmes conditions',body:
+    '<p>Une balance ne se trompe pas beaucoup, mais elle mesure tout : l’eau, le contenu de l’intestin, le sel de la veille. '
+    +'Pour que deux pesées soient comparables, il faut qu’elles se ressemblent.</p>'
+    +'<ul class="tip-ul"><li>Au réveil, après être passé aux toilettes, avant de boire ou de manger.</li>'
+    +'<li>Sans vêtements, ou toujours les mêmes.</li>'
+    +'<li>Sur un <b>sol dur</b> — un tapis fausse la mesure, parfois de plus d’un kilo.</li>'
+    +'<li>Toujours la même balance, au même endroit de la pièce.</li>'
+    +'<li>Pieds secs et propres : l’impédance passe par la peau.</li></ul>'
+    +'<p class="tip-note">Les mesures de composition (gras, eau, muscle) sont bien plus sensibles que le poids : à lire uniquement en tendance sur deux ou trois semaines.</p>'});
+  /* 5. Le sel, l'eau, le lendemain de fête. */
+  T.push({p:80,emoji:'🍜',title:'Le lendemain d’un gros repas',body:
+    '<p>Le matin après un restaurant ou un repas de famille, la balance monte souvent de <b>1 à 2 kg</b>. '
+    +'Ce ne sont pas des kilos de graisse : il faudrait manger 7 700 kcal en trop pour fabriquer un seul kilo de gras.</p>'
+    +'<p>Ce que tu vois, c’est du sel et des glucides qui retiennent de l’eau, plus le poids de ce qui n’est pas encore digéré. '
+    +'Ça s’en va tout seul en <b>deux à quatre jours</b>, surtout si tu bois normalement et que tu bouges un peu.</p>'
+    +'<p class="tip-note">Le réflexe utile : continuer à se peser. Sauter la pesée « parce que ça va être moche », c’est perdre l’information qui montre justement que ça redescend.</p>'});
+  /* 6. Bouger hors sport — le plus gros levier après l'assiette. */
+  T.push({p:75,emoji:'👟',title:'Ce que tu brûles sans t’en rendre compte',body:
+    '<p>Entre deux personnes de même poids, l’écart de dépense quotidienne lié aux gestes ordinaires — marcher, monter un escalier, rester debout — peut atteindre <b>plusieurs centaines de calories</b>. '
+    +'C’est plus que trois séances de sport dans la semaine.</p>'
+    +'<p>Le piège : quand on mange moins, on bouge spontanément moins, sans le décider. C’est l’une des causes les plus fréquentes de palier.</p>'
+    +'<ul class="tip-ul"><li>Un arrêt de bus plus tôt, c’est déjà 10 à 15 minutes.</li>'
+    +'<li>Un appel téléphonique debout ou en marchant.</li>'
+    +'<li>Une marche de 10 minutes après le repas : elle aide aussi la digestion et la glycémie.</li></ul>'
+    +(metricOn('steps')?'':'<button class="btn btn--ghost btn--block" data-act="metric-on" data-k="steps" style="margin-top:10px">Suivre mes pas</button>')});
+  /* 7. Muscu en déficit. */
+  if(state.settings.modules.sport) T.push({p:70,emoji:'🏋️',title:'Pourquoi soulever quelque chose',body:
+    '<p>Le sport d’endurance brûle des calories pendant la séance. Le travail en force, lui, envoie un signal différent : « garde ce muscle, il sert ». '
+    +'En déficit, c’est ce signal qui détermine si les kilos perdus viennent surtout du gras.</p>'
+    +'<p>Deux à trois séances par semaine suffisent largement. Les mouvements qui font travailler beaucoup de muscles à la fois (squat, tirage, pompes, fentes) rapportent le plus par minute passée.</p>'
+    +'<p class="tip-note">Effet secondaire connu : un muscle qui vient de travailler retient de l’eau pendant deux à trois jours. La balance monte alors que tout va bien.</p>'});
+  /* 8. Sommeil. */
+  T.push({p:65,emoji:'😴',title:'Le sommeil pèse sur la balance',body:
+    '<p>Quand on dort peu, l’appétit augmente le lendemain — en particulier pour le sucré et le gras — et la volonté baisse. '
+    +'Ce n’est pas un manque de caractère : c’est de la chimie.</p>'
+    +'<p>À déficit identique, mieux dormir change la proportion de graisse dans ce que tu perds. C’est le levier le moins coûteux de tous.</p>'
+    +(metricOn('sleep')?'<p class="tip-note">Tu notes déjà ton sommeil : dans quelques semaines, la courbe dira si tes nuits courtes se voient sur ta balance.</p>'
+      :'<button class="btn btn--ghost btn--block" data-act="metric-on" data-k="sleep" style="margin-top:10px">Suivre mon sommeil</button>')});
+  /* 9. Tour de taille. */
+  T.push({p:60,emoji:'📏',title:'Le mètre ruban dit ce que la balance cache',body:
+    '<p>Le tour de taille descend souvent quand le poids stagne : la graisse part pendant que l’eau et le muscle compensent sur la balance. '
+    +'C’est aussi un meilleur indicateur de santé que l’IMC, parce qu’il vise la graisse du ventre.</p>'
+    +'<ul class="tip-ul"><li>Au niveau du nombril, debout, à jeun, sans serrer.</li>'
+    +'<li>Une fois par mois suffit — c’est trop lent pour être suivi chaque semaine.</li>'
+    +'<li>Toujours au même moment de la journée.</li></ul>'
+    +(metricOn('waist')?'<button class="btn btn--ghost btn--block" data-act="weigh-in" style="margin-top:10px">Noter mon tour de taille</button>'
+      :'<button class="btn btn--ghost btn--block" data-act="metric-on" data-k="waist" style="margin-top:10px">Suivre mon tour de taille</button>')});
+  /* 10. Pause de régime, proposée seulement quand elle a du sens. */
+  if(weeks>=10) T.push({p:78,emoji:'⏸️',title:'Et si tu faisais une pause ?',badge:weeks+' semaines',body:
+    '<p>Après deux à trois mois de déficit continu, une <b>semaine à ton point neutre</b> — ni plus, ni moins — fait souvent plus de bien qu’un effort supplémentaire : la faim redescend, l’énergie revient, et la perte repart ensuite plus franchement.</p>'
+    +'<p>Ce n’est pas un abandon, c’est une respiration prévue. Tu continues à te peser, tu continues à noter : tu changes seulement la hauteur de la barre pendant sept jours.</p>'
+    +'<button class="btn btn--ghost btn--block" data-act="go" data-route="/simulateur" style="margin-top:10px">Voir mon point neutre</button>'});
+  /* 11. Alcool, factuel. */
+  T.push({p:50,emoji:'🍷',title:'L’alcool, sans morale',body:
+    '<p>Un gramme d’alcool apporte 7 kcal — presque autant que le gras. Un verre de vin tourne autour de 120 kcal, une pinte autour de 200.</p>'
+    +'<p>Mais l’essentiel est ailleurs : tant qu’il y a de l’alcool à traiter, le corps met le reste en attente. Et il désinhibe l’appétit — c’est souvent ce qui accompagne le verre qui compte le plus.</p>'
+    +'<p class="tip-note">Aucune raison de s’en priver si tu y tiens. Le noter dans tes calories suffit à ce que l’app reste juste.</p>'});
+  /* 12. L'effet week-end, personnalisé. */
+  const wd=weekdayEffect();
+  if(wd.ok&&wd.notable) T.push({p:72,emoji:'📆',title:'Ton effet week-end',badge:capit(wd.hi.label),body:
+    '<p>Ton poids du '+esc(wd.hi.label)+' est en moyenne <b>'+fmtKg(wd.gap)+'</b> au-dessus de ton '+esc(wd.lo.label)+'. '
+    +'C’est le rythme de ta semaine, pas de la graisse qui apparaît et disparaît.</p>'
+    +'<p>Le piège classique : comparer un lundi à un vendredi et croire qu’on a tout perdu ou tout repris. '
+    +'Compare toujours un lundi à un lundi — ou fie-toi à la tendance lissée, qui fait ça pour toi.</p>'
+    +'<button class="btn btn--ghost btn--block" data-act="go" data-route="/analyse" style="margin-top:10px">Voir ma semaine</button>'});
+  /* 13. Le redémarrage. */
+  T.push({p:40,emoji:'🌱',title:'Reprendre après une coupure',body:
+    '<p>Une semaine sans se peser, un mois sans noter : ça arrive à tout le monde et ça n’efface rien. '
+    +'Tes anciennes données sont toujours là, ta tendance se recalcule toute seule, ta série repart de zéro sans que ça change quoi que ce soit à ton corps.</p>'
+    +'<p>La seule chose qui compte : la pesée de demain matin. Pas celles qui manquent.</p>'});
+
+  T.sort((a,b)=>b.p-a.p);
+  h+=T.map(tipCard).join('');
+  h+='<div class="hint" style="margin-top:14px">Élan décrit des mécanismes généraux et tes propres chiffres. Pour toute question de santé, de traitement ou de régime particulier, c’est à un professionnel qu’il faut demander.</div>';
+  return h;
+}
+
+function analyseProteines(){
+  const t=proteinTarget(); if(!t) return '';
+  const ps=proteinStats(14);
+  let h='<div class="section-title">Tes protéines</div><div class="card">';
+  if(ps.ok){
+    const ratio=clamp(ps.mean/t.g,0,1.3);
+    h+='<div class="flex between aic"><div><div class="stat-label">Moyenne sur '+ps.n+' '+plural(ps.n,'jour')+'</div>'
+     +'<div class="hero-value tnum" style="font-size:30px;margin:2px 0 0"><span data-count="'+ps.mean+'" data-dec="0">'+nf(ps.mean,0)+'</span><span class="hero-unit">g/j</span></div></div>'
+     +'<div class="stat-label" style="text-align:right">cible<br><b style="font-size:17px;color:var(--tx-1)">'+t.g+' g</b></div></div>'
+     +'<div class="bar" style="margin-top:12px"><span class="bar-seg" data-bar="'+Math.min(1,ratio).toFixed(2)+'" style="background:var(--grad-brand)"></span></div>'
+     +'<div class="small muted" style="margin-top:10px;line-height:1.5">'
+     +(ps.mean>=t.g*0.9
+        ?'Tu es à la cible. C’est ce qui fait que les kilos perdus viennent surtout de la graisse, et pas du muscle.'
+        :'Il te manque environ <b>'+nf(t.g-ps.mean,0)+' g par jour</b> pour atteindre la cible. En déficit, c’est le seul macro qui change vraiment la nature de ce que tu perds.')
+     +'</div>';
+  } else {
+    h+='<div class="row-title">≈ '+t.g+' g par jour</div>'
+     +'<div class="small muted" style="margin:6px 0 0;line-height:1.5">C’est la quantité qui, en déficit, protège le mieux ton muscle — 1,6 g par kilo de poids de forme (estimé à '+t.basisKg+' kg chez toi). '
+     +'Yazio te donne déjà ce chiffre chaque soir&nbsp;: tu peux le noter ici à côté de tes calories.</div>'
+     +'<button class="btn btn--ghost btn--block" data-act="metric-on" data-k="protIn" style="margin-top:12px">Suivre mes protéines</button>';
+  }
+  h+='<div class="hint" style="margin-top:10px">Repère, pas prescription : si tu as un souci de reins ou un régime particulier, c’est à ton médecin d’en décider.</div>';
+  return h+'</div>';
 }
 
 /* ---------- Écran : Calories ---------- */
@@ -4627,12 +5443,19 @@ function screenCalories(){
   }
   h+='<button class="btn btn--ghost btn--block" data-act="go" data-route="/courbes" style="margin-top:12px">📈 Voir le décalage sur la courbe</button>';
   const days=[]; for(let i=13;i>=0;i--){ const d=addDayYMD(isoToday(),-i); days.push({d:d,v:mv(entryFor(d),'kcalIn')}); }
+  const neutral=maintenanceKcal();
   h+='<div class="section-title">14 derniers jours</div><div class="list">'
-   +days.slice().reverse().map(x=>'<div class="row" data-act="quick-kcal" data-date="'+x.d+'">'
+   +days.slice().reverse().map(x=>{
+     const w=mv(entryFor(x.d),'weight');
+     const ec=(x.v!=null&&neutral.kcal!=null)?x.v-neutral.kcal:null;
+     return '<div class="row" data-act="wi-kcal" data-date="'+x.d+'">'
      +'<div class="row-ic">'+(x.v==null?'—':'🍽️')+'</div>'
      +'<div class="row-main"><div class="row-title">'+esc(capit(fmtDayLabel(x.d)))+'</div>'
-     +'<div class="row-sub">'+(x.v==null?'non renseigné':nf(x.v,0)+' kcal')+'</div></div>'+arrowHTML()+'</div>').join('')
+     +'<div class="row-sub">'+(x.v==null?'<span class="muted">non renseigné · toucher pour ajouter</span>'
+        :('<b>'+nf(x.v,0)+' kcal</b>'+(ec!=null?' <span class="'+(ec<0?'down':'')+'">'+(ec<0?MINUS:'+')+nf(Math.abs(ec),0)+' vs neutre</span>':'')))
+     +(w!=null?'<span class="pill">'+nf(w,1)+' kg</span>':'')+'</div></div>'+arrowHTML()+'</div>'; }).join('')
    +'</div>';
+  h+='<div class="hint" style="margin:10px 4px 0">Toucher un jour ouvre sa pesée, curseur déjà dans la case des calories.</div>';
   return h;
 }
 
@@ -4672,7 +5495,7 @@ function screenMetrics(){
   h+='<div class="hint" style="margin-bottom:12px">Choisis ce que tu saisis chaque matin. Décoche ce que ta balance ne donne pas — tu pourras réactiver quand tu veux, sans rien perdre.</div>';
   const groups=[['Balance',['weight','fat','water','muscle','bone','protein','kcalOut','visceral','bmr','metaAge']],
     ['Mesures au mètre',['waist','hips','chest','arm','thigh','neck']],
-    ['Habitudes',['steps','sleep','mood']]];
+    ['Habitudes',['protIn','steps','sleep','mood']]];
   groups.forEach(g=>{
     h+='<div class="section-title">'+esc(g[0])+'</div><div class="card">';
     g[1].forEach(k=>{
@@ -4723,7 +5546,11 @@ function screenSettings(){
    +'<div class="field"><label>Année de naissance</label><input class="input tnum" id="stYear" data-set="profile.birthYear" data-type="int" data-min="1900" data-max="'+new Date().getFullYear()+'" inputmode="numeric" value="'+(p.birthYear||'')+'" placeholder="1999"></div></div>'
    +'<div class="field"><label>Sexe <span class="muted">(pour le métabolisme de base)</span></label>'
    +segHTML([['m','Homme'],['f','Femme']],p.sex,'st-sex','')+'</div>'
-   +'<div class="hint">Enregistré automatiquement.</div></div>';
+   +'<div class="field"><label>Tes journées <span class="muted">(hors sport)</span></label>'
+   +'<div class="opt-list">'+JOBS.map(j=>'<button class="opt'+(currentJob().code===j.code?' is-active':'')+'" data-act="st-job" data-k="'+j.code+'">'
+     +'<span class="opt-ic">'+j.emoji+'</span><span class="opt-main"><b>'+esc(j.label)+'</b><span class="opt-sub">'+esc(j.hint)+'</span></span>'
+     +'<span class="opt-tick">✓</span></button>').join('')+'</div></div>'
+   +'<div class="hint">Huit heures debout brûlent plus que trois séances par semaine : c’est la base du calcul de ta dépense. Enregistré automatiquement.</div></div>';
 
   h+='<div class="section-title">Objectif</div><div class="card">'
    +'<div class="flex between aic"><div><div class="row-title">'+(targetWeight()!=null?fmtKg(targetWeight()):'Aucun objectif')+'</div>'
@@ -4766,17 +5593,22 @@ function screenSettings(){
      +'<div class="field"><label>Durée supposée (min)</label><input class="input tnum" id="pwDur" data-set="pillbox.defaultSessionMin" data-type="int" data-min="5" data-max="300" inputmode="numeric" value="'+P.defaultSessionMin+'"></div></div>'
      +'<div class="hint">Sert à placer « 15 min après la séance » quand l’heure réelle n’est pas connue. Enregistré automatiquement.</div></div>';
   }
+  const af=activityFactor();
   h+='<div class="section-title">Énergie</div><div class="card">'
    +'<div class="field"><label>Niveau d’activité</label>'
    +'<select class="input" id="stPal">'
-   +[['auto','Automatique'+(s.modules.sport?' (d’après tes séances)':' — nécessite le module Sport')]]
+   +[['auto','Automatique (ton métier + tes séances)']]
      .concat(PAL.map(x=>[x.code,x.label+' — '+x.hint]))
      .map(o=>'<option value="'+o[0]+'"'+((s.energy.palMode==='auto'?'auto':s.energy.pal)===o[0]?' selected':'')+'>'+esc(o[1])+'</option>').join('')+'</select>'
-   +'<div class="hint">Sert à estimer ta dépense théorique.'
-   +(s.modules.kcalIn?' Élan calcule aussi ta dépense <b>observée</b>, bien plus fiable.'
-                     :' Active les <b>calories mangées</b> pour qu’Élan calcule en plus ta dépense réelle.')
-   +(s.energy.palMode==='auto'&&!s.modules.sport?' Sans le module Sport, « Automatique » retombe sur le niveau choisi ci-dessus.':'')
-   +'</div></div></div>';
+   +'<div class="hint">'+(af.manual
+      ?'Réglage manuel : facteur ×'+nf(af.f,2)+'.'
+      :'Facteur actuel <b>×'+nf(af.f,2)+'</b> = '+esc(currentJob().label.toLowerCase())+' (×'+nf(af.base,2)+')'
+        +(af.sport>0?' + tes séances (+'+nf(af.sport,2)+')':'')+'.')
+   +(s.modules.kcalIn?' Élan calcule aussi ton <b>point neutre observé</b>, bien plus fiable.'
+                     :' Active les <b>calories mangées</b> pour qu’Élan calcule ton point neutre réel.')
+   +'</div></div>'
+   +'<button class="btn btn--ghost btn--block" data-act="go" data-route="/simulateur" style="margin-top:10px">🧮 Simulateur de projection</button>'
+   +'</div>';
   h+='<div class="section-title">Affichage</div><div class="card">'
    +'<div class="field"><label>Couleur d’accent</label>'
    +segHTML([['vert','Vert'],['ocean','Océan'],['violet','Violet'],['corail','Corail']],s.accentTheme,'st-accent','seg--sm')+'</div>'
@@ -4788,6 +5620,13 @@ function screenSettings(){
    +toggleHTML('Célébrations',s.celebrateOn!==false,'st-toggle',' data-k="celebrateOn"','confettis quand tu franchis un palier')
    +toggleHTML('Réduire les animations',s.reduceMotion===true,'st-toggle',' data-k="reduceMotion"')
    +'</div>';
+  h+='<div class="section-title">Barre du bas</div><div class="card">'
+   +'<div class="small muted" style="margin-bottom:10px">Choisis jusqu’à deux raccourcis supplémentaires. Accueil, Plus et le bouton central restent toujours en place.</div>'
+   +'<div class="chip-wrap">'+TAB_CHOICES.filter(c=>!c.fixed&&(!c.mod||s.modules[c.mod])).map(c=>{
+      const on=tabList().indexOf(c.route)>=0;
+      return '<button class="chip'+(on?' is-active':'')+'" data-act="st-tab" data-r="'+c.route+'">'
+        +(on?'✓ ':'+ ')+esc(c.label)+'</button>'; }).join('')+'</div>'
+   +'<div class="hint" style="margin-top:10px">'+tabList().length+' onglets sur 6 possibles.</div></div>';
   h+='<button class="btn btn--ghost btn--block" data-act="go" data-route="/sauvegarde" style="margin-top:12px">💾 Sauvegarde et synchronisation</button>';
   h+='<button class="btn btn--ghost btn--block" data-act="go" data-route="/aide" style="margin-top:8px">❓ Aide</button>';
   h+='<div class="small muted center" style="margin-top:20px">Élan v'+esc(state.meta.appVersion)+' · '+storageUsedText()+' utilisés</div>';
@@ -5435,6 +6274,7 @@ const ACTIONS={
   /* --- Saisie --- */
   'weigh-in':d=>openWeighIn(d&&d.date?d.date:isoToday()),
   'quick-kcal':d=>openQuickMetric('kcalIn',(d&&d.date)||isoToday()),
+  'wi-kcal':d=>openWeighIn((d&&d.date)||isoToday(),'kcalIn'),
   'qm-day':d=>openQuickMetric(d.k,d.date),
   'qm-save':d=>saveQuickMetric(d.k,d.date),
   'wi-day':d=>wiSetDate(addDayYMD(isoToday(),parseInt(d.d,10))),
@@ -5475,11 +6315,16 @@ const ACTIONS={
     toast('Supprimé',()=>{ state.motivations.splice(i,0,m); update(); }); },
 
   /* --- Courbes --- */
+  /* --- Simulateur --- */
+  'sim-delta':d=>{ state.ui.simIntake=clamp(simIntake()+parseInt(d.d,10),800,6000); saveNow(); render(); },
+  'sim-set':d=>{ state.ui.simIntake=clamp(parseInt(d.v,10)||2000,800,6000); saveNow(); render(); },
+
   'ch-view':d=>{ CH().view=d.v; saveNow(); render(); },
   'ch-period':(d,el)=>{ CH().period=el.dataset.val; saveNow(); render(); },
   'ch-metric':d=>{ CH().metric=d.m; saveNow(); render(); },
   'ch-unit':(d,el)=>{ state.settings.metricUnitPref[CH().metric]=el.dataset.val; touch(); save(); render(); },
   'ch-toggle':d=>{ CH()[d.k]=!CH()[d.k]; saveNow(); render(); },
+  'ch-caloverlay':d=>{ CH().calOverlay=d.v; saveNow(); render(); },
   'ch-lag':(d,el)=>{ CH().lag=clamp(parseInt(d.val!=null?d.val:el.dataset.val,10)||2,1,XC_MAX_LAG); saveNow(); render(); },
   'hm-weigh':d=>openWeighIn(d.date),
   'hm-sport':d=>openSportDaySheet(d.date),
@@ -5506,9 +6351,23 @@ const ACTIONS={
   /* --- Modules & réglages --- */
   'mod-on':d=>{ setModule(d.k,true); },
   'mod-toggle':(d,el)=>{ setModule(d.k,!state.settings.modules[d.k]); },
+  'metric-on':d=>{ state.settings.metrics[d.k]=true; touch(); invalidateCache(); save(); render();
+    toast(METRICS[d.k].label+' activé — tu le trouveras dans ta pesée'); },
   'metric-toggle':(d,el)=>{ state.settings.metrics[d.k]=!metricOn(d.k); el.classList.toggle('on'); touch(); invalidateCache(); save(); },
   'bone-unit':(d,el)=>{ state.settings.metricUnitPref.bone=el.dataset.val; segActivate(el); touch(); invalidateCache(); save(); render(); },
   'st-sex':(d,el)=>{ state.settings.profile.sex=el.dataset.val; segActivate(el); touch(); invalidateCache(); save(); },
+  'st-job':d=>{ state.settings.profile.job=d.k; touch(); invalidateCache(); save(); render(); },
+  'st-tab':d=>{
+    const cur=tabList().slice(), i=cur.indexOf(d.r);
+    if(i>=0){
+      if(tabChoice(d.r).fixed){ toast('Cet onglet ne peut pas être retiré'); return; }
+      if(cur.length<=3){ toast('Il faut au moins trois onglets'); return; }
+      cur.splice(i,1);
+    } else {
+      if(cur.length>=6){ toast('Six onglets au maximum — retires-en un d’abord'); return; }
+      cur.splice(cur.indexOf('/plus'),0,d.r);          // les raccourcis se rangent avant « Plus »
+    }
+    state.settings.tabs=cur; touch(); save(); renderTabbar(); render(); },
   'st-accent':(d,el)=>{ state.settings.accentTheme=el.dataset.val; touch(); save(); applyAccent(); render(); },
   'st-first':(d,el)=>{ state.settings.firstScreen=el.dataset.val; segActivate(el); touch(); save(); },
   'st-density':(d,el)=>{ state.settings.density=el.dataset.val; touch(); save(); applyPrefs(); render(); },
@@ -5742,6 +6601,7 @@ function onChange(e){
   if(e.target&&e.target.dataset&&e.target.dataset.set){ applySettingInput(e.target); return; }
   const id=e.target.id;
   if(id==='wiDate'&&WI){ wiSetDate(e.target.value); return; }
+  if(id==='simRange'){ state.ui.simIntake=clamp(parseInt(e.target.value,10)||2000,800,6000); saveNow(); render(); return; }
   if(id==='tblRange'){ TBL().range=e.target.value; TBL().limit=TBL_PAGE; saveNow(); render(); return; }
   if(id==='tblSort'){ TBL().sort=e.target.value; saveNow(); render(); return; }
   if(id==='ssDate'&&SS){ SS.date=e.target.value; ssRefreshDur(); return; }
@@ -5756,9 +6616,22 @@ function onChange(e){
     fr.readAsText(e.target.files[0]); e.target.value=''; return;
   }
 }
+/* Le curseur du simulateur donne un retour immédiat pendant qu'on le fait glisser ;
+   le recalcul complet n'a lieu qu'au relâchement. */
+function simPreview(el){
+  const v=clamp(parseInt(el.value,10)||2000,800,6000);
+  const neutral=parseInt(el.dataset.neutral,10)||v, gap=v-neutral;
+  const a=document.getElementById('simVal'); if(a) a.textContent=nf(v,0);
+  const g=document.getElementById('simGap');
+  if(g){ g.className='sim-gap '+(gap<0?'is-down':(gap>0?'is-up':''));
+    g.innerHTML=Math.abs(gap)<25?'Tu es à l’équilibre : ton poids reste stable.'
+      :(gap<0?'<b>'+nf(-gap,0)+' kcal</b> de moins que ton point neutre chaque jour.'
+             :'<b>'+nf(gap,0)+' kcal</b> de plus que ton point neutre chaque jour.'); }
+}
 function onInput(e){
   const t=e.target;
   if(t.dataset&&t.dataset.mi&&WI){ wiInput(t); return; }
+  if(t.id==='simRange'){ simPreview(t); return; }
   if(t.id==='mIcon'){ t.dataset.touched='1'; return; }
   if(t.id==='ssNote'&&SS){ SS.note=t.value; return; }
   if(t.id==='ssDist'&&SS){ SS.distanceKm=t.value; return; }
@@ -5840,8 +6713,83 @@ function postRender(r,animate){
   if(typeof postRenderScreen==='function') postRenderScreen(r,animate);
 }
 
+/* ============================================================
+   BARRE D'ONGLETS
+   ------------------------------------------------------------
+   Quatre onglets par défaut, plus le bouton central qui ne bouge
+   jamais. L'utilisateur peut ajouter jusqu'à deux raccourcis vers
+   les écrans qu'il ouvre le plus souvent — au-delà, les cibles
+   deviennent trop étroites pour un pouce.
+   ============================================================ */
+const TAB_ICONS={
+  '/':'<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h14V9.5"/>',
+  '/courbes':'<path d="M3 17.5 9 11l4 4 8-8.5"/><path d="M21 6.5h-4.5M21 6.5V11"/>',
+  '/tableau':'<rect x="3" y="4.5" width="18" height="15" rx="3"/><path d="M3 9.5h18M3 14.5h18M9 4.5v15"/>',
+  '/plus':'<rect x="4" y="4" width="6" height="6" rx="2"/><rect x="14" y="4" width="6" height="6" rx="2"/><rect x="4" y="14" width="6" height="6" rx="2"/><rect x="14" y="14" width="6" height="6" rx="2"/>',
+  '/sport':'<path d="M5 9v6M19 9v6M8 7v10M16 7v10M8 12h8"/>',
+  '/pilulier':'<rect x="3.2" y="8.4" width="17.6" height="7.2" rx="3.6"/><path d="M12 8.4v7.2"/>',
+  '/calories':'<path d="M12 3.5c3 3.4 5 6 5 9a5 5 0 0 1-10 0c0-1.6.6-3 1.6-4.4.5 1.2 1.2 1.9 2 2 .3-2.4-.1-4.6 1.4-6.6Z"/>',
+  '/analyse':'<circle cx="10.5" cy="10.5" r="6.2"/><path d="m15.2 15.2 4 4"/><path d="M8.4 11.6 10 9.6l1.7 1.6 2-2.6"/>',
+  '/simulateur':'<rect x="4.5" y="3" width="15" height="18" rx="3"/><path d="M8 7.5h8M8.5 12h1M12 12h1M15.5 12h1M8.5 16h1M12 16h1M15.5 16h1"/>',
+  '/objectif':'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.4"/><path d="M12 4v2.2M12 17.8V20M4 12h2.2M17.8 12H20"/>',
+  '/paliers':'<path d="M7 4h10v4a5 5 0 0 1-10 0Z"/><path d="M7 5.5H4.5v1A3.5 3.5 0 0 0 8 10M17 5.5h2.5v1A3.5 3.5 0 0 1 16 10"/><path d="M12 13v3M9 20h6l-.7-4h-4.6Z"/>',
+  '/sauvegarde':'<path d="M12 3v10.5M8.5 10 12 13.5 15.5 10"/><path d="M4.5 15v3.5a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5V15"/>'};
+const TAB_CHOICES=[
+  {route:'/',label:'Accueil',fixed:true},
+  {route:'/courbes',label:'Courbes'},
+  {route:'/tableau',label:'Tableau'},
+  {route:'/plus',label:'Plus',fixed:true},
+  {route:'/sport',label:'Sport',mod:'sport'},
+  {route:'/pilulier',label:'Pilulier',mod:'pillbox'},
+  {route:'/calories',label:'Calories',mod:'kcalIn'},
+  {route:'/analyse',label:'Analyse'},
+  {route:'/simulateur',label:'Simulateur'},
+  {route:'/objectif',label:'Objectif'},
+  {route:'/paliers',label:'Paliers'},
+  {route:'/sauvegarde',label:'Sauvegarde'}];
+const TABS_DEFAULT=['/','/courbes','/tableau','/plus'];
+function tabChoice(route){ return TAB_CHOICES.find(x=>x.route===route)||null; }
+/* La liste effective : on retire au passage un raccourci dont le module a été coupé,
+   sans l'effacer du réglage — il revient tout seul au rallumage du module. */
+function tabList(){
+  const raw=(state.settings.tabs&&state.settings.tabs.length>=2)?state.settings.tabs:TABS_DEFAULT;
+  const out=[];
+  raw.forEach(r=>{ const c=tabChoice(r);
+    if(!c) return;
+    if(c.mod&&!state.settings.modules[c.mod]) return;
+    if(out.indexOf(r)<0) out.push(r); });
+  if(out.indexOf('/')<0) out.unshift('/');
+  if(out.indexOf('/plus')<0) out.push('/plus');
+  return out.slice(0,6);
+}
+function renderTabbar(){
+  const bar=document.getElementById('tabbar'); if(!bar) return;
+  const list=tabList(), n=list.length, cut=Math.ceil(n/2);
+  const btn=r=>{ const c=tabChoice(r);
+    return '<button class="tab" data-tab="'+r+'" aria-label="'+esc(c.label)+'">'
+      +'<svg viewBox="0 0 24 24" class="tab-ic">'+(TAB_ICONS[r]||TAB_ICONS['/plus'])+'</svg>'
+      +'<span>'+esc(c.label)+'</span></button>'; };
+  bar.innerHTML=list.slice(0,cut).map(btn).join('')
+    +'<button class="fab" id="fab" aria-label="Saisir la pesée">'
+    +'<svg viewBox="0 0 24 24" class="fab-ic"><path d="M12 5v14M5 12h14"/></svg></button>'
+    +list.slice(cut).map(btn).join('')
+    +'<span class="tab-pill" id="tabPill" aria-hidden="true"></span>';
+  bar.style.gridTemplateColumns='repeat('+(n+1)+',1fr)';
+  bar.classList.toggle('tabbar--dense',n>=5);
+  const fabEl=document.getElementById('fab');
+  if(fabEl) fabEl.addEventListener('click',()=>openWeighIn(isoToday()));
+  qa('.tab').forEach(t=>t.addEventListener('click',()=>nav(t.dataset.tab)));
+}
+/* L'onglet allumé : celui dont la route correspond, sinon celui vers lequel ramène
+   le bouton « Retour ». Un raccourci ajouté s'allume donc sur son propre écran. */
+function activeTabFor(r){
+  const list=tabList();
+  if(list.indexOf(r)>=0) return r;
+  const t=tabOf(r);
+  return list.indexOf(t)>=0?t:'/plus';
+}
 function updateTabs(r){
-  const tabs=qa('.tab'); const active=tabOf(r);
+  const tabs=qa('.tab'); const active=activeTabFor(r);
   let activeEl=null;
   tabs.forEach(t=>{ const on=t.dataset.tab===active; t.classList.toggle('is-active',on); if(on) activeEl=t; });
   const pill=document.getElementById('tabPill'); const bar=document.getElementById('tabbar');
@@ -5855,9 +6803,7 @@ let BOOTED=false, HIDDEN_AT=0, LAST_W=0;
 function boot(){
   applyAccent(); applyPrefs();
   document.addEventListener('click',onClick);
-  const fabEl=document.getElementById('fab');
-  if(fabEl) fabEl.addEventListener('click',()=>openWeighIn(isoToday()));
-  qa('.tab').forEach(t=>t.addEventListener('click',()=>nav(t.dataset.tab)));
+  renderTabbar();
   document.addEventListener('change',onChange);
   document.addEventListener('input',onInput);
   LAST_W=window.innerWidth;

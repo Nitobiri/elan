@@ -22,3 +22,10 @@ dev/
 # Artefacts de test navigateur (local uniquement)
 .playwright-mcp/
 /*.png
+
+# Fichiers produits PAR l'application (export, sauvegarde, calendrier) :
+# ils contiennent des données personnelles et n'ont rien à faire dans le dépôt.
+elan-sauvegarde-*.json
+elan-sauvegarde-*.txt
+elan-tableau-*.csv
+pilulier-elan.ics

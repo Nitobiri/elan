@@ -314,7 +314,7 @@ const METRICS={
   muscle : {key:'muscle', label:'Masse musculaire',   short:'Muscle', emoji:'💪', kind:'comp',   defUnit:'pct', dec:1, decKg:2, better:'up',   color:'var(--m-muscle)', min:10,  max:75, minKg:8,  maxKg:150, group:'compo'},
   bone   : {key:'bone',   label:'Masse osseuse',      short:'Os',     emoji:'🦴', kind:'comp',   defUnit:'kg',  dec:1, decKg:1, better:'flat', color:'var(--m-os)',     min:0.5, max:20, minKg:0.5,maxKg:25,  opaque:true, group:'compo'},
   protein: {key:'protein',label:'Protéines',          short:'Prot.',  emoji:'🥚', kind:'comp',   defUnit:'pct', dec:1, decKg:2, better:'up',   color:'#39D3A0',         min:5,   max:35, minKg:2,  maxKg:60,  group:'compo'},
-  kcalOut: {key:'kcalOut',label:'Dépense (balance)',  short:'Dépense',emoji:'🔥', kind:'scalar', unit:'kcal', dec:0, better:'flat', color:'var(--m-cal)',    min:800, max:8000},
+  kcalOut: {key:'kcalOut',label:'Dépense (balance)',  short:'Dépense',emoji:'🔋', kind:'scalar', unit:'kcal', dec:0, better:'flat', color:'var(--m-cal)',    min:800, max:8000},
   kcalIn : {key:'kcalIn', label:'Calories mangées',   short:'Mangé',  emoji:'🍽️', kind:'scalar', unit:'kcal', dec:0, better:'flat', color:'#F0A93B',         min:0,   max:10000, module:'kcalIn'},
   visceral:{key:'visceral',label:'Graisse viscérale', short:'Viscé.', emoji:'🎯', kind:'scalar', unit:'',     dec:0, better:'down', color:'#FB7185',         min:1,   max:60},
   bmr    : {key:'bmr',    label:'Métabolisme de base',short:'MB',     emoji:'⚙️', kind:'scalar', unit:'kcal', dec:0, better:'up',   color:'#8AB4F8',         min:800, max:4000},
@@ -2160,7 +2160,7 @@ function homeHero(){
   let h='<div class="card hero tap" data-act="go" data-route="/courbes">';
   h+='<div class="hero-label">'+(mode==='trend'?'Tendance lissée'
       :(stale===0?'Poids ce matin':'Dernière pesée · '+esc(fmtDateShort(l.date))))+'</div>';
-  h+='<div class="hero-value tnum" data-count="'+big.toFixed(1)+'" data-dec="1" data-from="'+prev.toFixed(1)+'" data-suf=" kg">'+fmtKg(big)+'</div>';
+  h+='<div class="hero-value tnum"><span data-count="'+big.toFixed(1)+'" data-dec="1">'+nf(big,1)+'</span><span class="hero-unit">kg</span></div>';
   if(tr!=null&&all.length>1)
     h+='<div class="hero-trend tap" data-act="toggle-hero">'
       +(mode==='trend'?'Balance : <b>'+fmtKg(raw)+'</b>':'Tendance : <b>'+fmtKg(tr)+'</b>')
@@ -2672,7 +2672,7 @@ function courbesSport(){
    +chartSlot(w=>barChart(bars,{w:w,h:CH_H2,from:r.from,to:r.to,bucket:bucket,dec:0,
        target:bucket==='week'?(state.settings.sport.weeklyGoalMin||0):0}),{h:CH_H2})
    +'</div>';
-  h+='<div class="stats stats-4" style="margin-top:12px">'
+  h+='<div class="stats stats-2" style="margin-top:12px">'
    +statCard('Séances',String(list.length),'','')
    +statCard('Temps total',fmtMin(minutes),'','')
    +statCard('Moyenne /sem.',fmtMin(Math.round(minutes/weeks)),'','')
@@ -5338,6 +5338,22 @@ function signCls(delta,better){
 const sheetRoot=document.getElementById('sheet-root');
 let SHEET_CLOSE=null;
 function sheetOpen(){ return sheetRoot.classList.contains('open'); }
+function fitSheetToViewport(){
+  const vv=window.visualViewport; if(!vv) return;
+  const st=sheetRoot.style;
+  if(!sheetOpen()){ st.top=st.bottom=st.height=''; return; }
+  st.top=vv.offsetTop+'px'; st.bottom='auto'; st.height=vv.height+'px';
+}
+if(window.visualViewport){
+  window.visualViewport.addEventListener('resize',fitSheetToViewport);
+  window.visualViewport.addEventListener('scroll',fitSheetToViewport);
+  /* Après le recalage, le champ qui vient de prendre le focus peut se retrouver hors
+     de la bande visible : on le ramène au centre une fois le clavier posé. */
+  sheetRoot.addEventListener('focusin',e=>{
+    const el=e.target; if(!el||!el.matches||!el.matches('input,textarea,select')) return;
+    setTimeout(()=>{ try{ el.scrollIntoView({block:'center',behavior:motionOff()?'auto':'smooth'}); }catch(x){} },280);
+  });
+}
 function openSheet(title,bodyHTML,opts){ opts=opts||{};
   SHEET_CLOSE=opts.onClose||null;
   sheetRoot.innerHTML='<div class="sheet-scrim" data-act="close-sheet"></div><div class="sheet"><div class="sheet-handle"></div>'
@@ -5345,12 +5361,13 @@ function openSheet(title,bodyHTML,opts){ opts=opts||{};
     +'<div class="sheet-body">'+bodyHTML+'</div></div>';
   sheetRoot.classList.add('open'); sheetRoot.setAttribute('aria-hidden','false');
   wireSheetDrag();
+  fitSheetToViewport();
   if(opts.onOpen) opts.onOpen();
 }
 function closeSheet(){
   const cb=SHEET_CLOSE; SHEET_CLOSE=null;
   sheetRoot.classList.remove('open'); sheetRoot.setAttribute('aria-hidden','true');
-  setTimeout(()=>{ if(!sheetRoot.classList.contains('open')) sheetRoot.innerHTML=''; },350);
+  setTimeout(()=>{ if(!sheetRoot.classList.contains('open')){ sheetRoot.innerHTML=''; fitSheetToViewport(); } },350);
   if(cb) cb();
 }
 function refreshSheet(bodyHTML){ const b=q('.sheet-body',sheetRoot); if(b) b.innerHTML=bodyHTML; }
@@ -5426,7 +5443,7 @@ const ACTIONS={
   'skip-today':()=>{ state.ui.skippedDays=state.ui.skippedDays||{}; state.ui.skippedDays[isoToday()]=1; update();
     toast('Journée sans pesée — à demain 👋',()=>{ delete state.ui.skippedDays[isoToday()]; update(); }); },
   'unskip-today':()=>{ delete (state.ui.skippedDays||{})[isoToday()]; update(); openWeighIn(isoToday()); },
-  'toggle-hero':()=>{ state.settings.heroMode=(state.settings.heroMode==='trend')?'raw':'trend'; saveNow(); render(); },
+  'toggle-hero':()=>{ state.settings.heroMode=(state.settings.heroMode==='trend')?'raw':'trend'; touch(); saveNow(); render(); },
 
   /* --- Objectif, paliers, motivations --- */
   'edit-goal':()=>goalEditor(),
@@ -5461,7 +5478,7 @@ const ACTIONS={
   'ch-view':d=>{ CH().view=d.v; saveNow(); render(); },
   'ch-period':(d,el)=>{ CH().period=el.dataset.val; saveNow(); render(); },
   'ch-metric':d=>{ CH().metric=d.m; saveNow(); render(); },
-  'ch-unit':(d,el)=>{ state.settings.metricUnitPref[CH().metric]=el.dataset.val; saveNow(); render(); },
+  'ch-unit':(d,el)=>{ state.settings.metricUnitPref[CH().metric]=el.dataset.val; touch(); save(); render(); },
   'ch-toggle':d=>{ CH()[d.k]=!CH()[d.k]; saveNow(); render(); },
   'ch-lag':(d,el)=>{ CH().lag=clamp(parseInt(d.val!=null?d.val:el.dataset.val,10)||2,1,XC_MAX_LAG); saveNow(); render(); },
   'hm-weigh':d=>openWeighIn(d.date),

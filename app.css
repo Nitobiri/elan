@@ -26,11 +26,25 @@
   --grad-card:linear-gradient(160deg,rgba(255,255,255,.055),rgba(255,255,255,0) 60%);
   --grad-glow:radial-gradient(120% 120% at 50% 0%,rgba(61,214,140,.15),transparent 62%);
   --ring-track:#212B33;
-  /* Ombres */
-  --sh-1:0 1px 2px rgba(0,0,0,.4);
-  --sh-card:0 6px 16px rgba(0,0,0,.45);
-  --sh-sheet:0 -14px 40px rgba(0,0,0,.58);
+  /* Profondeur — deux couches : un liseré net qui détache, une ombre douce qui pose.
+     Une seule ombre floue et grasse écrase tout et donne l'air « gabarit ». */
+  --sh-1:0 1px 2px rgba(0,0,0,.34);
+  --sh-card:0 0 0 .5px rgba(0,0,0,.5), 0 2px 6px rgba(0,0,0,.22), 0 10px 26px -12px rgba(0,0,0,.6);
+  --sh-pop:0 0 0 .5px rgba(0,0,0,.5), 0 8px 22px rgba(0,0,0,.36), 0 24px 48px -20px rgba(0,0,0,.7);
+  --sh-sheet:0 -14px 44px rgba(0,0,0,.6);
   --sh-fab:0 6px 20px var(--acc-glow);
+  --inner-top:inset 0 1px 0 rgba(255,255,255,.055);
+
+  /* Échelle typographique — sept crans, pas un de plus. */
+  --fs-display:52px; --fs-h1:26px; --fs-h2:19px; --fs-lg:16.5px;
+  --fs-md:15px; --fs-sm:13px; --fs-xs:11.5px; --fs-2xs:10.5px;
+  --tr-display:-.038em; --tr-h1:-.022em; --tr-tight:-.01em;
+
+  /* Mouvement — trois courbes nommées, jamais de valeur en dur ailleurs. */
+  --ease-out:cubic-bezier(.22,1,.36,1);
+  --ease-spring:cubic-bezier(.34,1.46,.5,1);
+  --ease-in-out:cubic-bezier(.65,0,.35,1);
+  --dur-1:.14s; --dur-2:.24s; --dur-3:.36s; --dur-4:.52s;
   /* Rayons */
   --r-sm:10px; --r-md:12px; --r-lg:16px; --r-xl:20px; --r-2xl:28px; --r-full:999px;
   /* Espacements */
@@ -38,6 +52,7 @@
   --tabh:56px;
   --gut:16px;
   --maxw:520px;
+  --ic-stroke:1.75;
 }
 :root[data-accent="ocean"]{ --acc:#3AB7F0; --acc-2:#7FD7FF; --acc-glow:rgba(58,183,240,.32);
   --grad-brand:linear-gradient(135deg,#7FD7FF 0%,#3AB7F0 55%,#1683BF 100%); }
@@ -51,9 +66,13 @@ html,body{ margin:0; height:100%; }
 body{
   background:var(--bg-0); color:var(--tx-1);
   font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;
-  font-size:15px; line-height:1.4; -webkit-font-smoothing:antialiased;
+  font-size:var(--fs-md); line-height:1.42; -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
   overscroll-behavior-y:none;
 }
+/* Tous les chiffres de l'app sont alignés en colonne : sans ça, une valeur qui
+   passe de 109,9 à 110,0 fait sauter la ligne entière d'un demi-caractère. */
+.tnum,.stat-val,.row-amt,.hero-value,.calc-v,.kv-v,.ro-v,.dtable td{ font-variant-numeric:tabular-nums; }
 button{ font:inherit; color:inherit; border:none; background:none; cursor:pointer; }
 input,select,textarea{ font:inherit; color:inherit; }
 h1,h2,h3,p{ margin:0; }
@@ -61,6 +80,33 @@ h1,h2,h3,p{ margin:0; }
 
 .app-ambience{ position:fixed; inset:0 0 auto 0; height:340px; background:var(--grad-glow);
   pointer-events:none; z-index:0; }
+
+/* ============================================================
+   ICÔNES
+   ------------------------------------------------------------
+   Un seul trait pour toute l'app. `currentColor` partout : une
+   icône prend la couleur de son contexte, on ne la recolorie
+   jamais à la main.
+   ============================================================ */
+.ic{ width:20px; height:20px; flex:none; display:block;
+  stroke:currentColor; fill:none; stroke-width:var(--ic-stroke);
+  stroke-linecap:round; stroke-linejoin:round; }
+.ic--sm{ width:16px; height:16px; stroke-width:2; }
+.ic--lg{ width:24px; height:24px; stroke-width:1.65; }
+.ic--xl{ width:30px; height:30px; stroke-width:1.5; }
+/* La tuile : un carré arrondi teinté par la couleur du contenu. C'est le motif
+   qui remplace les emoji dans les listes, la grille et les en-têtes de carte. */
+.ic-tile{ width:38px; height:38px; border-radius:11px; flex:none;
+  display:grid; place-items:center; color:var(--tx-2);
+  background:color-mix(in srgb,currentColor 13%,var(--bg-3));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,currentColor 16%,transparent); }
+.ic-tile .ic{ width:19px; height:19px; }
+.ic-tile--sm{ width:30px; height:30px; border-radius:9px; }
+.ic-tile--sm .ic{ width:16px; height:16px; }
+.ic-tile--lg{ width:44px; height:44px; border-radius:13px; }
+.ic-tile--lg .ic{ width:22px; height:22px; }
+.ic-tile--acc{ color:var(--acc-2); }
+.ic-tile--plain{ background:var(--bg-3); box-shadow:none; }
 
 /* ---------- Layout ---------- */
 .view{
@@ -73,30 +119,37 @@ h1,h2,h3,p{ margin:0; }
 .screen{ animation:fadeUp .28s ease both; }
 .screen.no-anim{ animation:none; }
 .screen.no-anim .row{ animation:none; }
-.screen-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin:6px 0 14px; }
-.screen-title{ font-size:26px; font-weight:700; letter-spacing:-.02em; }
-.screen-sub{ color:var(--tx-2); font-size:13px; }
-.section-title{ font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:.05em;
-  color:var(--tx-3); margin:22px 4px 10px; }
+.screen-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin:4px 0 16px; }
+.screen-title{ font-size:var(--fs-h1); font-weight:700; letter-spacing:var(--tr-h1); line-height:1.15; }
+.screen-sub{ color:var(--tx-2); font-size:var(--fs-sm); margin-top:3px; }
+/* Un titre de section n'a pas à crier : petites capitales, gris, et une fine
+   règle qui court jusqu'au bord pour asseoir la colonne. */
+.section-title{ font-size:var(--fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.08em;
+  color:var(--tx-3); margin:26px 2px 10px; display:flex; align-items:center; gap:10px; }
+.section-title::after{ content:""; flex:1; height:1px; background:var(--hairline); }
 .back-btn{ display:inline-flex; align-items:center; gap:6px; color:var(--tx-2); font-size:14px; font-weight:600; margin:-6px 0 4px -6px; padding:8px 6px; min-height:44px; text-decoration:none; }
 .back-btn:active{ opacity:.6; }
 .back-btn svg{ width:18px; height:18px; stroke:currentColor; fill:none; stroke-width:2.2; }
 
 /* ---------- Cartes ---------- */
 .card{ background:var(--bg-2); border:1px solid var(--hairline); border-radius:var(--r-xl);
-  padding:var(--s4); box-shadow:var(--sh-card); position:relative; overflow:hidden; }
+  padding:var(--s4); box-shadow:var(--sh-card),var(--inner-top); position:relative; overflow:hidden; }
 .card::before{ content:""; position:absolute; inset:0; background:var(--grad-card); pointer-events:none; }
 .card>*{ position:relative; }
 .card+.card{ margin-top:12px; }
 .card--flat{ box-shadow:none; background:var(--bg-1); }
 .card--accent{ border-color:var(--acc-glow); box-shadow:0 6px 18px var(--acc-glow); }
 
-/* Hero */
-.hero{ text-align:center; padding:20px 16px 18px; }
-.hero-label{ color:var(--tx-2); font-size:13px; font-weight:600; letter-spacing:.02em; }
-.hero-value{ font-size:44px; font-weight:700; letter-spacing:-.03em; margin-top:2px;
-  background:var(--grad-hero); -webkit-background-clip:text; background-clip:text; color:transparent; }
-.hero-unit{ font-size:22px; font-weight:600; color:var(--tx-3); margin-left:3px; }
+/* Hero — le chiffre est PLEIN, pas en dégradé. Un dégradé sur un nombre de
+   52 px le rend flou aux extrémités et fait « page d'accueil de startup » ;
+   du blanc franc, très resserré, fait « instrument de mesure ». */
+.hero{ text-align:center; padding:22px 16px 18px; }
+.hero-label{ color:var(--tx-3); font-size:var(--fs-xs); font-weight:700;
+  text-transform:uppercase; letter-spacing:.09em; }
+.hero-value{ font-size:var(--fs-display); font-weight:700; letter-spacing:var(--tr-display);
+  line-height:1.02; margin-top:6px; color:var(--tx-1); }
+.hero-unit{ font-size:21px; font-weight:600; color:var(--tx-3); margin-left:4px;
+  letter-spacing:0; vertical-align:baseline; }
 .hero-sub{ color:var(--tx-2); font-size:13px; margin-top:6px; }
 .spark{ width:100%; height:52px; margin-top:10px; display:block; }
 
@@ -104,9 +157,12 @@ h1,h2,h3,p{ margin:0; }
 .stats{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:12px; }
 .stats-2{ grid-template-columns:repeat(2,1fr); }
 .stats-4{ grid-template-columns:repeat(4,1fr); }
-.stat{ background:var(--bg-2); border:1px solid var(--hairline); border-radius:var(--r-lg); padding:12px 8px; text-align:center; min-width:0; min-height:70px; display:flex; flex-direction:column; justify-content:center; }
-.stat-label{ color:var(--tx-2); font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.03em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.stat-val{ font-size:17px; font-weight:650; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.stat{ background:var(--bg-2); border:1px solid var(--hairline); border-radius:var(--r-lg);
+  padding:12px 9px; text-align:center; min-width:0; min-height:72px;
+  display:flex; flex-direction:column; justify-content:center;
+  box-shadow:var(--inner-top); }
+.stat-label{ color:var(--tx-3); font-size:var(--fs-2xs); font-weight:700; text-transform:uppercase; letter-spacing:.06em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.stat-val{ font-size:18px; font-weight:680; margin-top:4px; letter-spacing:var(--tr-tight); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .stat-sub{ color:var(--tx-3); font-size:10.5px; margin-top:2px; line-height:1.25;
   display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
 .pos{ color:var(--pos); } .neg{ color:var(--neg); } .warn{ color:var(--warn); }
@@ -116,14 +172,27 @@ h1,h2,h3,p{ margin:0; }
 .list{ display:flex; flex-direction:column; }
 .day-head{ color:var(--tx-3); font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; margin:16px 4px 6px; }
 .row{ display:flex; align-items:center; gap:12px; padding:11px 12px; background:var(--bg-2);
-  border:1px solid var(--hairline); border-radius:var(--r-lg); margin-bottom:8px; animation:rowIn .3s ease both; }
-.row[data-act]:active{ transform:scale(.985); }
+  border:1px solid var(--hairline); border-radius:var(--r-lg); margin-bottom:8px;
+  box-shadow:var(--inner-top); animation:rowIn var(--dur-3) var(--ease-out) both;
+  transition:transform var(--dur-1) var(--ease-out), background var(--dur-1) linear; }
+.row[data-act]:active{ transform:scale(.985); background:var(--bg-3); }
 .card.tap{ transition:transform .12s ease, filter .12s ease; }
 .card.tap:active{ transform:scale(.985); filter:brightness(1.08); }
-.row-ic{ width:40px; height:40px; border-radius:12px; display:grid; place-items:center; font-size:19px; flex:none;
-  background:var(--bg-3); }
+.row-ic{ width:38px; height:38px; border-radius:11px; display:grid; place-items:center;
+  font-size:18px; flex:none; color:var(--tx-2);
+  background:color-mix(in srgb,currentColor 13%,var(--bg-3));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,currentColor 16%,transparent); }
+.row-ic .ic{ width:19px; height:19px; }
+/* Un emoji choisi par l'utilisateur (activité, produit) garde son fond neutre :
+   il apporte déjà sa couleur, la teinte de la tuile ferait doublon. */
+.row-ic--emoji{ background:var(--bg-3); box-shadow:none; color:inherit; }
 .row-main{ min-width:0; flex:1; }
-.row-title{ font-weight:600; font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.row-title{ font-weight:600; font-size:15px; letter-spacing:var(--tr-tight); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* Un titre de carte peut porter une icône : elle prend l'accent, jamais le blanc du texte. */
+.row-title.flex{ white-space:normal; overflow:visible; }
+.row-title .ic{ color:var(--acc-2); flex:none; }
+.card--warn .row-title .ic{ color:var(--warn); }
+.card--danger .row-title .ic{ color:var(--neg); }
 .row-title.wrap{ white-space:normal; overflow:visible; }
 /* Quand les actions ne tiennent plus à côté du libellé, elles passent dessous
    plutôt que de rogner le nom de la séance. */
@@ -159,17 +228,25 @@ h1,h2,h3,p{ margin:0; }
 
 /* ---------- Boutons ---------- */
 .btn{ display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:12px 16px;
-  border-radius:var(--r-md); font-weight:650; font-size:15px; background:var(--bg-3); color:var(--tx-1); transition:transform .12s ease; text-decoration:none; }
-.btn:active{ transform:scale(.96); }
+  border-radius:var(--r-md); font-weight:650; font-size:15px; letter-spacing:var(--tr-tight);
+  background:var(--bg-3); color:var(--tx-1); text-decoration:none;
+  box-shadow:var(--inner-top);
+  transition:transform var(--dur-1) var(--ease-out), filter var(--dur-1) linear; }
+.btn:active{ transform:scale(.96); filter:brightness(1.1); }
+.btn .ic{ width:18px; height:18px; }
+.btn--lg .ic{ width:20px; height:20px; }
 .btn--primary{ background:var(--grad-brand); color:#06231a; box-shadow:var(--sh-fab); }
 .btn--ghost{ background:transparent; border:1px solid var(--hairline-2); color:var(--tx-1); }
 .btn--danger{ background:color-mix(in srgb,var(--neg) 18%,var(--bg-3)); color:#ffb4b4; }
 .btn--block{ width:100%; }
+/* Un bouton pleine largeur avec icône : l'ensemble reste centré, l'icône collée au texte. */
+.btn--block .ic{ margin-right:-2px; }
 .btn--lg{ padding:16px 18px; font-size:16.5px; border-radius:var(--r-lg); }
 .btn--sm{ padding:8px 12px; font-size:13.5px; min-height:38px; }
 .btn-add{ display:inline-flex; align-items:center; gap:6px; color:var(--acc-2); font-weight:650; font-size:14px; min-height:44px; padding:8px 10px; margin:-8px -6px; border-radius:var(--r-md); }
 .btn-add:active{ opacity:.6; }
-.btn-add svg{ width:18px; height:18px; stroke:currentColor; fill:none; stroke-width:2.2; }
+.btn-add svg{ width:17px; height:17px; stroke:currentColor; fill:none; stroke-width:2.1;
+  stroke-linecap:round; stroke-linejoin:round; }
 .btn-row{ display:flex; gap:8px; }
 .btn-row>.btn{ flex:1; }
 
@@ -255,7 +332,11 @@ textarea.input{ min-height:70px; resize:vertical; }
 .mfield{ background:var(--bg-2); border:1px solid var(--hairline); border-radius:var(--r-lg); padding:11px 12px; margin-bottom:9px; }
 .mfield.is-filled{ border-color:var(--acc-glow); }
 .mfield-head{ display:flex; align-items:center; gap:9px; margin-bottom:8px; }
-.mfield-ic{ width:30px; height:30px; border-radius:9px; display:grid; place-items:center; font-size:15px; background:var(--bg-3); flex:none; }
+.mfield-ic{ width:30px; height:30px; border-radius:9px; display:grid; place-items:center;
+  font-size:15px; flex:none; color:var(--tx-2);
+  background:color-mix(in srgb,currentColor 14%,var(--bg-3));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,currentColor 18%,transparent); }
+.mfield-ic .ic{ width:17px; height:17px; }
 .mfield-name{ font-weight:650; font-size:14.5px; flex:1; min-width:0; }
 .mfield-delta{ font-size:12px; font-weight:650; flex:none; }
 .mfield-inputs{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
@@ -359,17 +440,28 @@ textarea.input{ min-height:70px; resize:vertical; }
 
 /* ---------- Grille de raccourcis (Plus) ---------- */
 .hub{ display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
-.hub-item{ background:var(--bg-2); border:1px solid var(--hairline); border-radius:var(--r-lg); padding:16px 14px; display:flex; align-items:center; gap:12px; text-decoration:none; color:inherit; }
-.hub-item:active{ transform:scale(.97); }
-.hub-ic{ width:38px; height:38px; border-radius:11px; display:grid; place-items:center; font-size:19px; background:var(--bg-3); flex:none; }
-.hub-label{ font-weight:650; font-size:14.5px; }
-.hub-sub{ color:var(--tx-3); font-size:11.5px; margin-top:1px; }
+.hub-item{ background:var(--bg-2); border:1px solid var(--hairline); border-radius:var(--r-lg);
+  padding:14px 13px; display:flex; flex-direction:column; align-items:flex-start; gap:11px;
+  text-decoration:none; color:inherit; min-height:104px; box-shadow:var(--inner-top);
+  transition:transform var(--dur-1) var(--ease-out), border-color var(--dur-2) linear; }
+.hub-item:active{ transform:scale(.965); border-color:var(--hairline-2); }
+.hub-ic{ width:36px; height:36px; border-radius:11px; display:grid; place-items:center; flex:none;
+  color:var(--tx-2); background:color-mix(in srgb,currentColor 14%,var(--bg-3));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,currentColor 18%,transparent); }
+.hub-ic .ic{ width:19px; height:19px; }
+.hub-txt{ min-width:0; width:100%; }
+.hub-label{ font-weight:650; font-size:14.5px; letter-spacing:var(--tr-tight); }
+.hub-sub{ color:var(--tx-3); font-size:var(--fs-xs); margin-top:2px; line-height:1.35; }
 
 /* ---------- États vides ---------- */
-.empty{ text-align:center; color:var(--tx-2); padding:36px 20px; }
-.empty-ic{ font-size:40px; margin-bottom:10px; }
-.empty h3{ font-size:17px; margin-bottom:6px; color:var(--tx-1); }
-.empty p{ font-size:13.5px; max-width:290px; margin:0 auto 16px; }
+.empty{ text-align:center; color:var(--tx-2); padding:40px 20px; }
+.empty-ic{ width:58px; height:58px; border-radius:18px; margin:0 auto 14px;
+  display:grid; place-items:center; color:var(--tx-3);
+  background:color-mix(in srgb,currentColor 12%,var(--bg-2));
+  box-shadow:inset 0 0 0 1px var(--hairline); }
+.empty-ic .ic{ width:26px; height:26px; stroke-width:1.5; }
+.empty h3{ font-size:17px; margin-bottom:6px; color:var(--tx-1); letter-spacing:var(--tr-tight); }
+.empty p{ font-size:13.5px; max-width:290px; margin:0 auto 16px; line-height:1.5; }
 
 /* ---------- Toast ---------- */
 .toast-root{ position:fixed; left:0; right:0; z-index:80;
@@ -390,7 +482,11 @@ textarea.input{ min-height:70px; resize:vertical; }
 .insight{ display:flex; gap:11px; align-items:flex-start; padding:13px 14px; border-radius:var(--r-lg);
   background:linear-gradient(135deg,color-mix(in srgb,var(--acc) 12%,var(--bg-2)),var(--bg-2));
   border:1px solid var(--acc-glow); }
-.insight-ic{ font-size:20px; flex:none; line-height:1.2; }
+.insight-ic{ flex:none; width:32px; height:32px; border-radius:10px; display:grid; place-items:center;
+  color:var(--acc-2); background:color-mix(in srgb,currentColor 15%,transparent);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,currentColor 20%,transparent); }
+.insight-ic .ic{ width:17px; height:17px; }
+.insight--neutral .insight-ic{ color:var(--tx-2); }
 .insight-txt{ font-size:13.5px; line-height:1.45; }
 .insight-txt strong{ color:var(--acc-2); }
 .insight--neutral{ background:var(--bg-2); border-color:var(--hairline); }
@@ -415,11 +511,17 @@ textarea.input{ min-height:70px; resize:vertical; }
 .card--danger{ border-color:var(--neg); }
 .card--ok{ border-color:color-mix(in srgb,var(--pos) 55%,transparent); }
 .today-top{ display:flex; align-items:flex-start; gap:12px; }
-.today-ic{ width:44px; height:44px; border-radius:14px; flex:none; display:grid; place-items:center;
-  font-size:21px; background:var(--bg-3); }
-.today-ic.is-done{ background:color-mix(in srgb,var(--pos) 20%,var(--bg-3)); color:var(--pos); font-weight:800; }
+.today-ic{ width:44px; height:44px; border-radius:13px; flex:none; display:grid; place-items:center;
+  font-size:20px; color:var(--tx-2);
+  background:color-mix(in srgb,currentColor 13%,var(--bg-3));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,currentColor 16%,transparent); }
+.today-ic .ic{ width:22px; height:22px; }
+.today-ic.is-done{ color:var(--pos); }
+.today-ic.is-acc{ color:var(--acc-2); }
 .streak-line{ margin-top:12px; padding-top:10px; border-top:1px solid var(--hairline);
-  font-size:13px; color:var(--tx-2); }
+  font-size:13px; color:var(--tx-2); display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+.streak-line .ic{ color:var(--acc-2); }
+.streak-line b{ color:var(--tx-1); }
 .hero-trend{ margin-top:6px; font-size:13px; color:var(--tx-2); display:inline-block; padding:6px 4px; }
 .hero-trend b{ color:var(--tx-1); }
 .insight-text{ font-size:14.5px; line-height:1.45; margin-top:3px; }
@@ -482,6 +584,50 @@ textarea.input{ min-height:70px; resize:vertical; }
 .seg-opt.is-off{ opacity:.4; }
 :root{ --m-goal:#F6CF7D; }
 
+/* Le bandeau de mise à jour : il descend du haut, il ne clignote pas,
+   et il ne réapparaît pas tant que l'utilisateur n'a pas rechargé. */
+.upd-banner{ margin-bottom:12px; animation:updIn .42s var(--ease-spring) both; }
+.upd-banner .today-ic .ic{ animation:updSpin 2.4s linear infinite; }
+@keyframes updIn{ from{ opacity:0; transform:translateY(-10px) scale(.98);} to{ opacity:1; transform:none;} }
+@keyframes updSpin{ to{ transform:rotate(360deg);} }
+:root[data-motion="off"] .upd-banner .today-ic .ic{ animation:none; }
+
+/* ============================================================
+   COMPOSANTS À ICÔNE
+   ============================================================ */
+/* Un bouton qui ne porte qu'une icône : carré, sans texte, cible 44 px. */
+.icon-btn{ width:40px; height:40px; padding:0; border-radius:var(--r-md); flex:none;
+  display:grid; place-items:center; color:var(--tx-2); }
+.icon-btn .ic{ width:20px; height:20px; }
+.icon-btn:active{ color:var(--tx-1); }
+
+/* Puce (chip) portant une icône devant son libellé. */
+.chip .ic,.chip-ic .ic{ width:15px; height:15px; }
+.chip-ic{ display:inline-flex; margin-right:-1px; }
+.subtab .ic{ width:15px; height:15px; margin-right:6px; vertical-align:-2px; }
+.subtab{ display:inline-flex; align-items:center; }
+
+/* La grande marque des écrans de bienvenue et de félicitations. */
+.ob-mark{ width:72px; height:72px; margin:0 auto; border-radius:22px;
+  display:grid; place-items:center; color:var(--acc-2);
+  background:color-mix(in srgb,currentColor 12%,var(--bg-2));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,currentColor 22%,transparent),0 0 34px -8px var(--acc-glow); }
+
+/* Le palier fêté, au centre de sa feuille. */
+.ms-hero{ width:84px; height:84px; margin:0 auto 4px; border-radius:26px;
+  display:grid; place-items:center; color:var(--gold);
+  background:color-mix(in srgb,currentColor 14%,var(--bg-2));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,currentColor 26%,transparent),0 0 40px -10px currentColor;
+  animation:msPop .6s var(--ease-spring) both; }
+@keyframes msPop{ from{ opacity:0; transform:scale(.6) rotate(-8deg);} to{ opacity:1; transform:none;} }
+
+/* Un emoji choisi par l'utilisateur reste un emoji : fond neutre, pas de teinte. */
+.today-ic--emoji{ box-shadow:none; }
+/* L'emoji choisi par l'utilisateur. Toujours dans ce marqueur — c'est ce qui
+   permet au banc de vérifier qu'il n'en reste nulle part ailleurs. */
+.uem{ font-style:normal; line-height:1; display:inline-block; }
+.pill-week-name .uem{ font-size:14px; }
+
 /* ---------- Pilulier ---------- */
 .pill-slot{ transition:opacity .2s ease, background .2s ease; }
 .pill-slot.is-done{ opacity:.55; }
@@ -491,7 +637,10 @@ textarea.input{ min-height:70px; resize:vertical; }
 .pill-slot.is-na{ opacity:.7; background:transparent; border-style:dashed; }
 .pill-actions{ display:flex; gap:6px; flex:none; }
 .pill-btn{ width:40px; height:40px; border-radius:12px; display:grid; place-items:center;
-  background:var(--bg-3); color:var(--tx-2); font-size:17px; font-weight:700; transition:transform .1s ease; }
+  background:var(--bg-3); color:var(--tx-2); font-size:17px; font-weight:700;
+  transition:transform var(--dur-1) var(--ease-out); }
+.pill-btn .ic{ width:18px; height:18px; stroke-width:2.4; }
+.pill-check .ic{ width:16px; height:16px; stroke-width:2.6; }
 .pill-btn:active{ transform:scale(.9); }
 .pill-btn--ok{ background:color-mix(in srgb,var(--pos) 22%,var(--bg-3)); color:#8ff0c6; }
 .pill-btn--no{ background:color-mix(in srgb,var(--neg) 16%,var(--bg-3)); color:#ffb4b4; }
@@ -565,7 +714,12 @@ textarea.input{ min-height:70px; resize:vertical; }
   border:1px solid var(--hairline); transition:background .16s ease,border-color .16s ease; }
 .opt:active{ transform:scale(.99); }
 .opt.is-active{ background:color-mix(in srgb,var(--acc) 12%,var(--bg-2)); border-color:color-mix(in srgb,var(--acc) 46%,transparent); }
-.opt-ic{ font-size:19px; width:26px; text-align:center; flex:none; }
+.opt-ic{ width:30px; height:30px; border-radius:9px; flex:none; display:grid; place-items:center;
+  font-size:17px; color:var(--tx-2);
+  background:color-mix(in srgb,currentColor 13%,var(--bg-3));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,currentColor 16%,transparent); }
+.opt-ic .ic{ width:17px; height:17px; }
+.opt.is-active .opt-ic{ color:var(--acc-2); }
 .opt-main{ flex:1; min-width:0; display:block; }
 .opt-main b{ display:block; font-size:14px; font-weight:650; }
 .opt-sub{ display:block; font-size:12px; color:var(--tx-3); margin-top:1px; }
@@ -628,6 +782,73 @@ textarea.input{ min-height:70px; resize:vertical; }
 .wk-row .miss{ color:var(--tx-3); opacity:.5; }
 
 /* ============================================================
+   MA SEMAINE
+   ============================================================ */
+/* Navigation : les flèches s'effacent, le libellé porte l'écran. */
+.wknav{ display:flex; align-items:center; gap:8px; margin:2px 0 14px; }
+.wknav-mid{ flex:1; min-width:0; text-align:center; }
+.wknav-t{ font-size:16px; font-weight:680; letter-spacing:var(--tr-tight); }
+.wknav-s{ font-size:var(--fs-xs); color:var(--tx-3); margin-top:1px; font-variant-numeric:tabular-nums; }
+.icon-btn.is-off{ opacity:.22; pointer-events:none; }
+
+/* La frise : sept colonnes, la plus légère monte le plus haut.
+   On lit la forme de la semaine avant même de lire les chiffres. */
+.wkstrip{ display:grid; grid-template-columns:repeat(7,1fr); gap:5px; margin-top:16px;
+  align-items:end; height:132px; }
+.wkday{ display:flex; flex-direction:column; align-items:center; justify-content:flex-end;
+  gap:5px; height:100%; padding:0; border-radius:var(--r-md);
+  transition:background var(--dur-1) linear; }
+.wkday:active{ background:var(--bg-3); }
+.wkday-bar{ width:100%; max-width:26px; border-radius:7px 7px 4px 4px; flex:none;
+  background:var(--bg-3); height:6px;
+  animation:wkGrow .5s var(--ease-out) both; transform-origin:bottom; }
+.wkday.on .wkday-bar{ background:linear-gradient(180deg,var(--acc-2),var(--acc)); box-shadow:0 0 12px -2px var(--acc-glow); }
+.wkday.skip .wkday-bar{ background:transparent; box-shadow:inset 0 0 0 1px var(--hairline-2); height:22px; }
+.wkday.off .wkday-bar{ height:8px; opacity:.5; }
+.wkday.futur .wkday-bar{ height:8px; opacity:.22; }
+.wkday.today .wkday-bar{ box-shadow:0 0 0 1.5px var(--acc),0 0 14px -2px var(--acc-glow); }
+.wkday-v{ font-size:10.5px; font-weight:700; color:var(--tx-2); font-variant-numeric:tabular-nums;
+  min-height:13px; letter-spacing:-.02em; }
+.wkday.on .wkday-v{ color:var(--tx-1); }
+.wkday.futur .wkday-v{ color:transparent; }
+.wkday-d{ font-size:10px; font-weight:700; color:var(--tx-3); text-transform:uppercase; }
+.wkday.today .wkday-d{ color:var(--acc-2); }
+@keyframes wkGrow{ from{ transform:scaleY(.1); opacity:0;} to{ transform:none; opacity:1;} }
+.wkday:nth-child(2) .wkday-bar{ animation-delay:40ms; }
+.wkday:nth-child(3) .wkday-bar{ animation-delay:80ms; }
+.wkday:nth-child(4) .wkday-bar{ animation-delay:120ms; }
+.wkday:nth-child(5) .wkday-bar{ animation-delay:160ms; }
+.wkday:nth-child(6) .wkday-bar{ animation-delay:200ms; }
+.wkday:nth-child(7) .wkday-bar{ animation-delay:240ms; }
+.screen.no-anim .wkday-bar{ animation:none; }
+
+/* ============================================================
+   MENSURATIONS — la jauge tour de taille / hauteur
+   ------------------------------------------------------------
+   Une règle, une zone verte, un curseur. Pas de rouge : la zone
+   haute est simplement NON colorée, ce qui suffit à la lire.
+   ============================================================ */
+.whtr{ margin-top:18px; }
+.whtr-top{ display:flex; justify-content:space-between; align-items:baseline;
+  font-size:var(--fs-2xs); font-weight:700; color:var(--tx-3); font-variant-numeric:tabular-nums; }
+.whtr-mid{ text-transform:uppercase; letter-spacing:.08em; }
+.whtr-track{ position:relative; height:10px; border-radius:var(--r-full);
+  background:var(--bg-3); margin:22px 0 10px; overflow:visible; }
+/* La zone saine : de 0,40 à 0,50 sur une règle qui court de 0,40 à 0,65 → 40 % de la largeur. */
+.whtr-zone.whtr-ok{ position:absolute; left:0; width:40%; top:0; bottom:0;
+  border-radius:var(--r-full); background:linear-gradient(90deg,var(--acc),color-mix(in srgb,var(--acc) 55%,transparent)); }
+/* Le repère de 0,50 : un trait et son étiquette, pour que la bande verte
+   se lise comme une ZONE et non comme une barre remplie à 40 %. */
+.whtr-mark{ position:absolute; left:40%; top:-5px; bottom:-5px; width:2px; margin-left:-1px;
+  background:var(--bg-0); border-radius:1px; }
+.whtr-mark b{ position:absolute; top:-16px; left:50%; transform:translateX(-50%);
+  font-size:9.5px; font-weight:700; color:var(--tx-3); font-variant-numeric:tabular-nums; }
+.whtr-cursor{ position:absolute; top:50%; width:16px; height:16px; margin:-8px 0 0 -8px;
+  border-radius:50%; background:var(--tx-1); border:3px solid var(--bg-0);
+  box-shadow:0 2px 8px rgba(0,0,0,.6); transition:left .8s var(--ease-out); }
+.whtr-val{ font-size:15px; font-weight:700; text-align:center; font-variant-numeric:tabular-nums; }
+
+/* ============================================================
    BOÎTE À OUTILS — fiches dépliables
    ============================================================ */
 .acc{ background:var(--bg-2); border:1px solid var(--hairline); border-radius:var(--r-lg);
@@ -637,7 +858,10 @@ textarea.input{ min-height:70px; resize:vertical; }
   list-style:none; -webkit-tap-highlight-color:transparent; }
 .acc-sum::-webkit-details-marker{ display:none; }
 .acc-sum:active{ background:var(--bg-3); }
-.acc-ic{ font-size:20px; width:26px; text-align:center; flex:none; }
+.acc-ic{ width:32px; height:32px; border-radius:10px; flex:none; display:grid; place-items:center;
+  color:var(--tx-2); background:color-mix(in srgb,currentColor 13%,var(--bg-3));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,currentColor 16%,transparent); }
+.acc-ic .ic{ width:17px; height:17px; }
 .acc-t{ flex:1; min-width:0; display:flex; flex-wrap:wrap; align-items:baseline; gap:8px; }
 .acc-t b{ font-size:14.5px; font-weight:650; }
 .acc-b{ font-size:11px; font-weight:700; color:var(--acc-2); background:color-mix(in srgb,var(--acc) 14%,transparent);
@@ -687,6 +911,22 @@ textarea.input{ min-height:70px; resize:vertical; }
 .screen .stats .stat:nth-child(3){ animation-delay:80ms; }
 .screen .stats .stat:nth-child(4){ animation-delay:120ms; }
 .screen.no-anim .stats .stat{ animation:none; }
+
+/* La grille « Plus » arrive en diagonale : l'œil suit l'ordre de lecture
+   au lieu de recevoir seize tuiles d'un bloc. */
+.screen .hub-item{ animation:rowIn .34s var(--ease-out) both; }
+.screen .hub-item:nth-child(2){ animation-delay:30ms; }
+.screen .hub-item:nth-child(3){ animation-delay:55ms; }
+.screen .hub-item:nth-child(4){ animation-delay:80ms; }
+.screen .hub-item:nth-child(5){ animation-delay:100ms; }
+.screen .hub-item:nth-child(6){ animation-delay:118ms; }
+.screen .hub-item:nth-child(7){ animation-delay:134ms; }
+.screen .hub-item:nth-child(n+8){ animation-delay:148ms; }
+.screen.no-anim .hub-item{ animation:none; }
+
+/* Une carte de chiffre se laisse presser comme le reste. */
+.stat{ transition:transform var(--dur-1) var(--ease-out); }
+.stat:active{ transform:scale(.975); }
 
 .screen .acc{ animation:rowIn .28s ease both; }
 .screen .acc:nth-child(n+3){ animation-delay:50ms; }

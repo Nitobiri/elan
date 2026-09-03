@@ -83,16 +83,16 @@ function safeSet(key,str){
 function storageBanner(){
   if(LOAD_ERROR){
     return '<div class="card card--danger" style="margin-bottom:12px">'
-      +'<div class="row-title">⚠️ Données illisibles</div>'
+      +'<div class="row-title flex aic gap8">'+ic('alert')+'Données illisibles</div>'
       +'<div class="small muted" style="margin:6px 0 10px">Élan n’a pas réussi à relire ta base ('+esc(LOAD_ERROR)+'). '
       +'Rien n’a été effacé : la version d’origine est conservée sur l’appareil. Importe ta dernière sauvegarde, ou contacte-moi avant de saisir quoi que ce soit.</div>'
       +'<button class="btn btn--danger btn--block" data-act="go" data-route="/sauvegarde">Ouvrir la sauvegarde</button></div>';
   }
   if(!STORAGE_FAIL) return '';
   return '<div class="card card--danger" style="margin-bottom:12px">'
-    +'<div class="row-title">⚠️ Enregistrement impossible</div>'
+    +'<div class="row-title flex aic gap8">'+ic('alert')+'Enregistrement impossible</div>'
     +'<div class="small muted" style="margin:6px 0 10px">Le stockage de cet iPhone est plein. Tes dernières saisies risquent d\'être perdues à la fermeture. Exporte une sauvegarde maintenant.</div>'
-    +'<button class="btn btn--danger btn--block" data-act="bk-share">📤 Exporter tout de suite</button></div>';
+    +'<button class="btn btn--danger btn--block" data-act="bk-share">'+ic('upload')+'Exporter tout de suite</button></div>';
 }
 
 function defaultDB(){
@@ -129,8 +129,9 @@ function defaultDB(){
     ui:{ charts:{}, table:{}, insightSeen:{}, skippedDays:{}, hints:{},
          backupSnoozeUntil:null, pillCelebratedOn:null, lastActivityKey:null, 
          etaShown:null, sportPeriod:7, sportMonth:null, pillTab:'jour', pillDate:null, pillWeek:null,
+         weekStart:null,
          analyseTab:'progression' },
-    meta:{ appVersion:'1.2', deviceId:null, deviceName:'', rev:0, updatedAt:null, createdAt:today,
+    meta:{ appVersion:'1.3', deviceId:null, deviceName:'', rev:0, updatedAt:null, createdAt:today,
            lastBackupAt:null, lastCloudAt:null, lastSnapAt:null, lastOpenAt:null, openCount:0 },
     entries:[], sessions:[], activities:[], plans:[], planOccs:[],
     meds:[], medGroups:[], medSchedules:[], medIntakes:[], motivations:[], milestones:[]
@@ -229,6 +230,115 @@ function round(v,dec){ if(!isNum(v)) return null; const p=Math.pow(10,dec==null?
 function parseNum(v){ if(v==null) return null; let s=String(v).trim().replace(/\s/g,'').replace(',','.').replace(/[^0-9.\-]/g,'');
   if(s===''||s==='-'||s==='.') return null; const f=parseFloat(s); return isFinite(f)?f:null; }
 
+/* ============================================================
+   ICÔNES
+   ------------------------------------------------------------
+   Un seul jeu vectoriel, dessiné à la même grille (24×24, trait
+   1,75, bouts ronds). Les emoji ne subsistent QUE là où c'est
+   l'utilisateur qui les a choisis : ses activités, ses produits,
+   ses raisons. Partout ailleurs — navigation, mesures, sections,
+   états vides — c'est une icône. Deux registres visuels nets
+   valent mieux qu'un mélange des deux à chaque ligne.
+   ============================================================ */
+const ICONS={
+  /* — Navigation et gestes — */
+  home:'<path d="M3.6 10.4 12 3.5l8.4 6.9"/><path d="M5.7 9.5V19a1.4 1.4 0 0 0 1.4 1.4h9.8a1.4 1.4 0 0 0 1.4-1.4V9.5"/><path d="M9.8 20.4v-4.9a2.2 2.2 0 0 1 4.4 0v4.9"/>',
+  chart:'<path d="M3.4 17.6 9 11.2l3.8 3.6 7.4-8.2"/><path d="M20.2 6.6h-4.1M20.2 6.6v4.1"/>',
+  table:'<rect x="3.4" y="4.4" width="17.2" height="15.2" rx="3"/><path d="M3.4 9.5h17.2M3.4 14.6h17.2M9.3 4.4v15.2"/>',
+  grid:'<rect x="4" y="4" width="6.2" height="6.2" rx="2"/><rect x="13.8" y="4" width="6.2" height="6.2" rx="2"/><rect x="4" y="13.8" width="6.2" height="6.2" rx="2"/><rect x="13.8" y="13.8" width="6.2" height="6.2" rx="2"/>',
+  chevron:'<path d="M9.2 5.6 15.6 12l-6.4 6.4"/>',
+  back:'<path d="M15 5 8 12l7 7"/>',
+  plus:'<path d="M12 5.2v13.6M5.2 12h13.6"/>',
+  minus:'<path d="M5.2 12h13.6"/>',
+  check:'<path d="M4.9 12.7 9.6 17.4 19.1 6.9"/>',
+  close:'<path d="M6.3 6.3 17.7 17.7M17.7 6.3 6.3 17.7"/>',
+  search:'<circle cx="10.8" cy="10.8" r="6.4"/><path d="m15.4 15.4 4.2 4.2"/>',
+  settings:'<circle cx="12" cy="12" r="3.1"/><path d="M19.5 14.2a1.5 1.5 0 0 0 .3 1.7l.1.1a1.8 1.8 0 1 1-2.6 2.6l-.1-.1a1.5 1.5 0 0 0-2.6 1.1v.3a1.8 1.8 0 1 1-3.6 0v-.2a1.5 1.5 0 0 0-2.7-1.1l-.1.1a1.8 1.8 0 1 1-2.6-2.6l.1-.1a1.5 1.5 0 0 0-1.1-2.6h-.3a1.8 1.8 0 1 1 0-3.6h.2a1.5 1.5 0 0 0 1.1-2.7l-.1-.1a1.8 1.8 0 1 1 2.6-2.6l.1.1a1.5 1.5 0 0 0 1.7.3h.1a1.5 1.5 0 0 0 .9-1.4v-.3a1.8 1.8 0 1 1 3.6 0v.2a1.5 1.5 0 0 0 2.6 1.1l.1-.1a1.8 1.8 0 1 1 2.6 2.6l-.1.1a1.5 1.5 0 0 0 1.1 2.6h.3a1.8 1.8 0 1 1 0 3.6h-.2a1.5 1.5 0 0 0-1.4.9Z"/>',
+  help:'<circle cx="12" cy="12" r="8.4"/><path d="M9.7 9.5a2.4 2.4 0 0 1 4.6.8c0 1.6-2.3 2.4-2.3 2.4"/><path d="M12 16.6h.01"/>',
+  info:'<circle cx="12" cy="12" r="8.4"/><path d="M12 11.2v5M12 7.8h.01"/>',
+  alert:'<path d="M10.6 3.9 2.9 17a1.6 1.6 0 0 0 1.4 2.4h15.4a1.6 1.6 0 0 0 1.4-2.4L13.4 3.9a1.6 1.6 0 0 0-2.8 0Z"/><path d="M12 9.4v3.8M12 16.6h.01"/>',
+  ban:'<circle cx="12" cy="12" r="8.4"/><path d="m6.1 6.1 11.8 11.8"/>',
+
+  /* — Le corps et ses mesures — */
+  scale:'<path d="M12 4.4v15.2"/><path d="M7.4 19.6h9.2"/><path d="M4.4 7.9 12 6l7.6 1.9"/><path d="M4.4 7.9 1.9 13.8h5"/><path d="M19.6 7.9 17.1 13.8h5"/><circle cx="12" cy="4.4" r="1.4"/>',
+  flame:'<path d="M12 3.4c3 3.6 5 6.3 5 9.2a5 5 0 0 1-10 0c0-1.7.6-3.1 1.7-4.5.5 1.2 1.2 1.9 2 2.1.3-2.5-.2-4.7 1.3-6.8Z"/>',
+  droplet:'<path d="M12 3.6c3.3 3.9 5.2 6.5 5.2 9a5.2 5.2 0 0 1-10.4 0c0-2.5 1.9-5.1 5.2-9Z"/>',
+  dumbbell:'<rect x="2.2" y="9.6" width="2.8" height="4.8" rx="1.1"/><rect x="19" y="9.6" width="2.8" height="4.8" rx="1.1"/><rect x="5.6" y="7.4" width="3.2" height="9.2" rx="1.4"/><rect x="15.2" y="7.4" width="3.2" height="9.2" rx="1.4"/><path d="M8.8 12h6.4"/>',
+  bone:'<path d="M14.5 9.5 9.5 14.5"/><path d="M9.9 16.3a2.3 2.3 0 1 1-2.2-2.2 2.3 2.3 0 1 1 2.2 2.2Z"/><path d="M16.3 9.9a2.3 2.3 0 1 0-2.2-2.2 2.3 2.3 0 1 0 2.2 2.2Z"/>',
+  egg:'<path d="M12 3.6c3.1 0 5.5 4.5 5.5 8.1a5.5 5.5 0 0 1-11 0c0-3.6 2.4-8.1 5.5-8.1Z"/>',
+  ruler:'<path d="M3.3 14.5 14.5 3.3a1.6 1.6 0 0 1 2.3 0l3.9 3.9a1.6 1.6 0 0 1 0 2.3L9.5 20.7a1.6 1.6 0 0 1-2.3 0l-3.9-3.9a1.6 1.6 0 0 1 0-2.3Z"/><path d="m7.6 10.2 1.8 1.8M10.6 7.2l1.8 1.8M13.6 4.2l1.8 1.8M4.6 13.2l1.8 1.8"/>',
+  heart:'<path d="M12 19.9 4.6 12.6a4.4 4.4 0 0 1 6.2-6.2l1.2 1.2 1.2-1.2a4.4 4.4 0 0 1 6.2 6.2Z"/>',
+  gauge:'<path d="M4.2 17.4a8.6 8.6 0 1 1 15.6 0"/><path d="m12 13.4 3.6-3.8"/><circle cx="12" cy="14.4" r="1.1"/>',
+  moon:'<path d="M20.2 13.4A8.2 8.2 0 0 1 10.6 3.8a8.4 8.4 0 1 0 9.6 9.6Z"/>',
+  steps:'<path d="M7.4 4.4c1.6 0 2.6 1.3 2.6 3.2 0 1.5-.5 2.4-.5 3.6 0 .9.4 1.5.4 2.3 0 1.1-1 1.7-2.5 1.7s-2.5-.6-2.5-1.7c0-.8.4-1.4.4-2.3 0-1.2-.5-2.1-.5-3.6 0-1.9 1-3.2 2.6-3.2Z"/><path d="M16.6 9.2c1.6 0 2.6 1.3 2.6 3.2 0 1.5-.5 2.4-.5 3.6 0 .9.4 1.5.4 2.3 0 1.1-1 1.7-2.5 1.7s-2.5-.6-2.5-1.7c0-.8.4-1.4.4-2.3 0-1.2-.5-2.1-.5-3.6 0-1.9 1-3.2 2.6-3.2Z"/>',
+
+  /* — Énergie et alimentation — */
+  battery:'<rect x="2.6" y="7.6" width="15.6" height="8.8" rx="2.8"/><path d="M21.4 10.6v2.8"/><path d="M6 10.9v2.2M9.2 10.9v2.2"/>',
+  plate:'<path d="M6.4 3.4v6.2a2.4 2.4 0 0 0 4.8 0V3.4"/><path d="M8.8 9.9v10.7"/><path d="M17.6 3.4c-1.6 1-2.6 2.8-2.6 4.9 0 1.7.8 2.8 2.2 3.1v9.2"/>',
+  meat:'<path d="M4.8 13.6a7.2 7.2 0 0 1 7.2-7.2c4.1 0 7.2 2.6 7.2 6.1 0 3.4-2.8 5.9-6.3 5.9H8.2a3.4 3.4 0 0 1-3.4-3.4Z"/><path d="M8.6 12.2a3 3 0 0 1 3-2.6"/>',
+  bolt:'<path d="M13.4 2.6 4.8 13.2h6.2l-.4 8.2 8.6-10.6h-6.2Z"/>',
+  target:'<circle cx="12" cy="12" r="8.2"/><circle cx="12" cy="12" r="4.4"/><circle cx="12" cy="12" r="1"/>',
+  calculator:'<rect x="4.6" y="2.8" width="14.8" height="18.4" rx="3"/><path d="M8.2 7.2h7.6"/><path d="M8.6 11.6h.01M12 11.6h.01M15.4 11.6h.01M8.6 15.4h.01M12 15.4h.01M15.4 15.4h.01M8.6 18.4h3.4"/>',
+
+  /* — Temps, activité, planification — */
+  run:'<circle cx="14.4" cy="4.9" r="2"/><path d="M9.4 20.6l2.2-5-2.6-2.4.9-4.9 3.5 2.2 2.9.6"/><path d="M11.9 12.9 8.2 11l-3 2.4"/><path d="m13.6 15.6 3.4 1.5 1.4 3.5"/>',
+  calendar:'<rect x="3.4" y="5" width="17.2" height="15.4" rx="3"/><path d="M3.4 9.8h17.2M8.4 3.2v3.6M15.6 3.2v3.6"/>',
+  clock:'<circle cx="12" cy="12" r="8.4"/><path d="M12 7.4V12l3 1.8"/>',
+  hourglass:'<path d="M7 3.4h10M7 20.6h10"/><path d="M7.6 3.4v3.1c0 2 1.6 3.2 3.2 4.4.8.6.8 1.6 0 2.2-1.6 1.2-3.2 2.4-3.2 4.4v3.1"/><path d="M16.4 3.4v3.1c0 2-1.6 3.2-3.2 4.4-.8.6-.8 1.6 0 2.2 1.6 1.2 3.2 2.4 3.2 4.4v3.1"/>',
+  history:'<path d="M3.6 12a8.4 8.4 0 1 0 2.5-6"/><path d="M3.4 4.2v4.2h4.2"/><path d="M12 8v4.2l2.9 1.7"/>',
+  sprout:'<path d="M12 20.4v-6.6"/><path d="M12 13.8C12 10.3 9.4 7.7 5.9 7.7c0 3.5 2.6 6.1 6.1 6.1Z"/><path d="M12 13.2c0-3.2 2.4-5.6 5.6-5.6.2 3.2-2.2 5.6-5.6 5.6Z"/>',
+
+  /* — Suivi, données, outils — */
+  /* Gélule tracée directement en diagonale : un transform="rotate(...)" dans une
+     icône se combine mal avec les transformations CSS appliquées au SVG. */
+  pill:'<path d="m10.4 20.6 10.2-10.2a4.9 4.9 0 0 0-7-7L3.4 13.6a4.9 4.9 0 0 0 7 7Z"/><path d="m8.5 8.5 7 7"/>',
+  trend:'<path d="M3.4 6.6 9 13l3.8-3.6 7.4 8.2"/><path d="M20.2 17.4h-4.1M20.2 17.4v-4.1"/>',
+  microscope:'<path d="M7.8 20.4h12.4"/><path d="M11.6 20.4a6 6 0 0 0 5.4-8.6"/><path d="m10.4 6.4 4.4 4.4"/><path d="M13.2 3.6 9 7.8a1.6 1.6 0 0 0 0 2.3l1.5 1.5a1.6 1.6 0 0 0 2.3 0l4.2-4.2a1.6 1.6 0 0 0 0-2.3l-1.5-1.5a1.6 1.6 0 0 0-2.3 0Z"/><path d="M5.4 20.4a5 5 0 0 1 5-5"/>',
+  toolbox:'<rect x="2.8" y="7.6" width="18.4" height="12.8" rx="2.8"/><path d="M8.4 7.6V5.8a2 2 0 0 1 2-2h3.2a2 2 0 0 1 2 2v1.8"/><path d="M2.8 13.2h18.4M10 11.6v3.2M14 11.6v3.2"/>',
+  bulb:'<path d="M9.4 18h5.2"/><path d="M10.2 20.6h3.6"/><path d="M8.2 12.9a4.9 4.9 0 1 1 7.6 0c-.8 1-1.2 1.7-1.3 2.6H9.5c-.1-.9-.5-1.6-1.3-2.6Z"/>',
+  quote:'<path d="M9.4 6.6c-2.8 1.2-4.4 3.6-4.4 6.6v4.2h5.4v-5.4H7.2c0-1.8.8-3 2.2-3.8Z"/><path d="M19 6.6c-2.8 1.2-4.4 3.6-4.4 6.6v4.2H20v-5.4h-3.2c0-1.8.8-3 2.2-3.8Z"/>',
+  trophy:'<path d="M7.4 4.2h9.2v4.4a4.6 4.6 0 1 1-9.2 0Z"/><path d="M7.4 5.8H4.8v1a3.6 3.6 0 0 0 3.4 3.6M16.6 5.8h2.6v1a3.6 3.6 0 0 1-3.4 3.6"/><path d="M12 13.2v3.2M8.6 20.4h6.8l-.8-4H9.4Z"/>',
+  medal:'<circle cx="12" cy="15" r="5.2"/><path d="m8.6 10.4-3-6.8h4.2L12 7.8l2.2-4.2h4.2l-3 6.8"/><path d="M12 13.2v3.6"/>',
+  sparkle:'<path d="M12 3.4 13.7 9l5.6 1.7-5.6 1.7L12 18l-1.7-5.6L4.7 10.7 10.3 9Z"/><path d="M18.6 16.6l.7 2.1 2.1.7-2.1.7-.7 2.1-.7-2.1-2.1-.7 2.1-.7Z"/>',
+
+  /* — Fichiers, sauvegarde, système — */
+  save:'<path d="M12 3.4v10.8M8.2 10.6 12 14.4l3.8-3.8"/><path d="M4.4 15.4v3.2a2 2 0 0 0 2 2h11.2a2 2 0 0 0 2-2v-3.2"/>',
+  upload:'<path d="M12 20.6V9.8M8.2 13.6 12 9.8l3.8 3.8"/><path d="M4.4 8.6V5.4a2 2 0 0 1 2-2h11.2a2 2 0 0 1 2 2v3.2"/>',
+  cloud:'<path d="M17.2 19.2a4.6 4.6 0 0 0 .6-9.2 6.2 6.2 0 0 0-12 1.9 3.7 3.7 0 0 0 .6 7.3Z"/>',
+  refresh:'<path d="M20.4 11.4A8.4 8.4 0 0 0 6.2 6.6L3.6 9"/><path d="M3.6 12.6a8.4 8.4 0 0 0 14.2 4.8l2.6-2.4"/><path d="M3.6 4.4V9h4.6M20.4 19.6V15h-4.6"/>',
+  trash:'<path d="M4.4 6.6h15.2"/><path d="M9.4 6.6V5a1.6 1.6 0 0 1 1.6-1.6h2a1.6 1.6 0 0 1 1.6 1.6v1.6"/><path d="M6.4 6.6v12.2a2 2 0 0 0 2 2h7.2a2 2 0 0 0 2-2V6.6"/><path d="M10.4 10.8v5.6M13.6 10.8v5.6"/>',
+  archive:'<path d="M3.4 7.6h17.2v11a2 2 0 0 1-2 2H5.4a2 2 0 0 1-2-2Z"/><rect x="2.6" y="3.4" width="18.8" height="4.2" rx="1.6"/><path d="M10 11.6h4"/>',
+  key:'<circle cx="7.6" cy="14.4" r="3.8"/><path d="m10.4 11.6 8-8"/><path d="m15.6 6.4 2.2 2.2M18 4l2.2 2.2"/>',
+  phone:'<rect x="6.2" y="2.6" width="11.6" height="18.8" rx="3"/><path d="M10.6 18.4h2.8"/>',
+  shuffle:'<path d="M3.6 6.6h3.2c1.4 0 2.3.7 3.2 2l3.6 6c.9 1.3 1.8 2 3.2 2h3.6"/><path d="M3.6 16.6h3.2c1.4 0 2.3-.7 3.2-2M14 8.6c.9-1.3 1.8-2 3.2-2h3.2"/><path d="M17.8 3.4 20.4 6l-2.6 2.6M17.8 14 20.4 16.6 17.8 19.2"/>',
+  layers:'<path d="m12 3.4 8.6 4.4L12 12.2 3.4 7.8Z"/><path d="m3.4 12.4 8.6 4.4 8.6-4.4"/><path d="m3.4 16.6 8.6 4.4 8.6-4.4"/>',
+  briefcase:'<rect x="3" y="7.2" width="18" height="13.2" rx="2.6"/><path d="M8.6 7.2V5.6a2 2 0 0 1 2-2h2.8a2 2 0 0 1 2 2v1.6"/><path d="M3 12.8h18"/>',
+  bricks:'<rect x="3.2" y="5.2" width="17.6" height="4.8" rx="1.2"/><rect x="3.2" y="10" width="17.6" height="4.8" rx="1.2"/><rect x="3.2" y="14.8" width="17.6" height="4.8" rx="1.2"/><path d="M9.4 5.2v4.8M15.4 10v4.8M9.4 14.8v4.8"/>',
+  walk:'<circle cx="12.8" cy="4.8" r="2"/><path d="m9 20.6 2.4-5.4-1.8-2.6.6-4 3 1.8 2.2 1.4"/><path d="m11.6 12.6-3-1.2-2 2.6"/><path d="m13.2 15.2 1.8 2 .8 3.4"/>',
+  chair:'<path d="M6.4 3.6v7.2h11.2V3.6"/><path d="M4.6 10.8h14.8"/><path d="M7.2 10.8v4.6h9.6v-4.6"/><path d="M7.2 15.4v5M16.8 15.4v5"/>',
+  hand:'<path d="M8.6 11.4V6.2a1.7 1.7 0 0 1 3.4 0v4.6"/><path d="M12 10.8V5.4a1.7 1.7 0 0 1 3.4 0v5.4"/><path d="M15.4 11.4V7.8a1.7 1.7 0 0 1 3.4 0v6.4a6.4 6.4 0 0 1-6.4 6.4h-.9a6 6 0 0 1-4.6-2.2l-2.8-3.6a1.7 1.7 0 0 1 2.6-2.2l1.9 2"/>'
+};
+/* Une icône : `ic('scale')`, ou `ic('scale','ic--lg')` pour l'agrandir. */
+function ic(name,cls){
+  const d=ICONS[name];
+  if(!d) return '';
+  return '<svg class="ic'+(cls?' '+cls:'')+'" viewBox="0 0 24 24" aria-hidden="true">'+d+'</svg>';
+}
+/* ------------------------------------------------------------------
+   Un emoji CHOISI PAR L'UTILISATEUR — l'émoji de son activité, de son
+   produit, de sa raison. C'est le seul endroit de l'app où un emoji a
+   encore le droit de s'afficher, et il passe TOUJOURS par ici.
+   Le banc s'appuie dessus : il retire les `<span class="uem">` du HTML
+   produit, puis exige qu'il ne reste plus un seul emoji. Sans ce
+   marqueur, la règle serait une intention ; avec lui, elle est testée.
+   ------------------------------------------------------------------ */
+function uem(e){ return '<span class="uem">'+(e||'\u2022')+'</span>'; }
+
+/* Une icône dans sa tuile arrondie — le motif des listes et de la grille « Plus ». */
+function icTile(name,cls,tint){
+  return '<div class="ic-tile'+(cls?' '+cls:'')+'"'+(tint?' style="color:'+tint+'"':'')+'>'+ic(name)+'</div>';
+}
+
 /* ---------- Dates ---------- */
 const JOURS=['dimanche','lundi','mardi','mercredi','jeudi','vendredi','samedi'];
 const JOURS_MIN=['D','L','M','M','J','V','S'];
@@ -310,31 +420,31 @@ function fmtDateTime(iso){ if(!iso) return '—'; const d=new Date(iso);
    kind 'derived': jamais saisi (IMC, masse maigre).
    ============================================================ */
 const METRICS={
-  weight : {key:'weight', label:'Poids',              short:'Poids',  emoji:'⚖️', kind:'scalar', unit:'kg',  dec:1, better:'down', color:'var(--m-poids)',  min:20,  max:400, always:true, group:'poids'},
-  fat    : {key:'fat',    label:'Masse grasse',       short:'Gras',   emoji:'🔥', kind:'comp',   defUnit:'pct', dec:1, decKg:2, better:'down', color:'var(--m-gras)',   min:3,   max:70, minKg:1,  maxKg:180, group:'compo'},
-  water  : {key:'water',  label:'Eau',                short:'Eau',    emoji:'💧', kind:'comp',   defUnit:'pct', dec:1, decKg:2, better:'up',   color:'var(--m-eau)',    min:20,  max:80, minKg:8,  maxKg:150, group:'compo'},
-  muscle : {key:'muscle', label:'Masse musculaire',   short:'Muscle', emoji:'💪', kind:'comp',   defUnit:'pct', dec:1, decKg:2, better:'up',   color:'var(--m-muscle)', min:10,  max:75, minKg:8,  maxKg:150, group:'compo'},
-  bone   : {key:'bone',   label:'Masse osseuse',      short:'Os',     emoji:'🦴', kind:'comp',   defUnit:'kg',  dec:1, decKg:1, better:'flat', color:'var(--m-os)',     min:0.5, max:20, minKg:0.5,maxKg:25,  opaque:true, group:'compo'},
-  protein: {key:'protein',label:'Protéines',          short:'Prot.',  emoji:'🥚', kind:'comp',   defUnit:'pct', dec:1, decKg:2, better:'up',   color:'#39D3A0',         min:5,   max:35, minKg:2,  maxKg:60,  group:'compo'},
-  kcalOut: {key:'kcalOut',label:'Dépense (balance)',  short:'Dépense',emoji:'🔋', kind:'scalar', unit:'kcal', dec:0, better:'flat', color:'var(--m-cal)',    min:800, max:8000},
-  kcalIn : {key:'kcalIn', label:'Calories mangées',   short:'Mangé',  emoji:'🍽️', kind:'scalar', unit:'kcal', dec:0, better:'flat', color:'#F0A93B',         min:0,   max:10000, module:'kcalIn'},
-  protIn : {key:'protIn', label:'Protéines mangées',  short:'Protéines',emoji:'🥩', kind:'scalar', unit:'g',    dec:0, better:'up',   color:'#39D3A0',         min:0,   max:500},
-  visceral:{key:'visceral',label:'Graisse viscérale', short:'Viscé.', emoji:'🎯', kind:'scalar', unit:'',     dec:0, better:'down', color:'#FB7185',         min:1,   max:60},
-  bmr    : {key:'bmr',    label:'Métabolisme de base',short:'MB',     emoji:'⚙️', kind:'scalar', unit:'kcal', dec:0, better:'up',   color:'#8AB4F8',         min:800, max:4000},
-  metaAge: {key:'metaAge',label:'Âge métabolique',    short:'Âge mét.',emoji:'⏳',kind:'scalar', unit:'ans',  dec:0, better:'down', color:'#A7B2C4',         min:10,  max:99},
-  waist  : {key:'waist',  label:'Tour de taille',     short:'Taille', emoji:'📏', kind:'scalar', unit:'cm',   dec:1, better:'down', color:'#F2789B',         min:40,  max:200},
-  hips   : {key:'hips',   label:'Tour de hanches',    short:'Hanches',emoji:'📏', kind:'scalar', unit:'cm',   dec:1, better:'down', color:'#D8A0F0',         min:40,  max:200},
-  chest  : {key:'chest',  label:'Tour de poitrine',   short:'Poitr.', emoji:'📏', kind:'scalar', unit:'cm',   dec:1, better:'flat', color:'#7FD7FF',         min:40,  max:200},
-  arm    : {key:'arm',    label:'Tour de bras',       short:'Bras',   emoji:'📏', kind:'scalar', unit:'cm',   dec:1, better:'up',   color:'#9AE6B4',         min:15,  max:80},
-  thigh  : {key:'thigh',  label:'Tour de cuisse',     short:'Cuisse', emoji:'📏', kind:'scalar', unit:'cm',   dec:1, better:'up',   color:'#B7E4C7',         min:25,  max:100},
-  neck   : {key:'neck',   label:'Tour de cou',        short:'Cou',    emoji:'📏', kind:'scalar', unit:'cm',   dec:1, better:'down', color:'#C3B0FF',         min:20,  max:70},
-  steps  : {key:'steps',  label:'Pas',                short:'Pas',    emoji:'👟', kind:'scalar', unit:'pas',  dec:0, better:'up',   color:'#38BDF8',         min:0,   max:100000},
-  sleep  : {key:'sleep',  label:'Sommeil',            short:'Sommeil',emoji:'😴', kind:'scalar', unit:'h',    dec:1, better:'up',   color:'#9A7BFF',         min:0,   max:16},
-  mood   : {key:'mood',   label:'Forme du jour',      short:'Forme',  emoji:'🙂', kind:'scalar', unit:'/5',   dec:0, better:'up',   color:'#F5C56B',         min:1,   max:5},
+  weight : {key:'weight', label:'Poids',              short:'Poids',  icon:'scale',  kind:'scalar', unit:'kg',  dec:1, better:'down', color:'var(--m-poids)',  min:20,  max:400, always:true, group:'poids'},
+  fat    : {key:'fat',    label:'Masse grasse',       short:'Gras',   icon:'flame',  kind:'comp',   defUnit:'pct', dec:1, decKg:2, better:'down', color:'var(--m-gras)',   min:3,   max:70, minKg:1,  maxKg:180, group:'compo'},
+  water  : {key:'water',  label:'Eau',                short:'Eau',    icon:'droplet',  kind:'comp',   defUnit:'pct', dec:1, decKg:2, better:'up',   color:'var(--m-eau)',    min:20,  max:80, minKg:8,  maxKg:150, group:'compo'},
+  muscle : {key:'muscle', label:'Masse musculaire',   short:'Muscle', icon:'dumbbell',  kind:'comp',   defUnit:'pct', dec:1, decKg:2, better:'up',   color:'var(--m-muscle)', min:10,  max:75, minKg:8,  maxKg:150, group:'compo'},
+  bone   : {key:'bone',   label:'Masse osseuse',      short:'Os',     icon:'bone',  kind:'comp',   defUnit:'kg',  dec:1, decKg:1, better:'flat', color:'var(--m-os)',     min:0.5, max:20, minKg:0.5,maxKg:25,  opaque:true, group:'compo'},
+  protein: {key:'protein',label:'Protéines',          short:'Prot.',  icon:'egg',  kind:'comp',   defUnit:'pct', dec:1, decKg:2, better:'up',   color:'#39D3A0',         min:5,   max:35, minKg:2,  maxKg:60,  group:'compo'},
+  kcalOut: {key:'kcalOut',label:'Dépense (balance)',  short:'Dépense',icon:'battery',  kind:'scalar', unit:'kcal', dec:0, better:'flat', color:'var(--m-cal)',    min:800, max:8000},
+  kcalIn : {key:'kcalIn', label:'Calories mangées',   short:'Mangé',  icon:'plate',  kind:'scalar', unit:'kcal', dec:0, better:'flat', color:'#F0A93B',         min:0,   max:10000, module:'kcalIn'},
+  protIn : {key:'protIn', label:'Protéines mangées',  short:'Protéines',icon:'meat',  kind:'scalar', unit:'g',    dec:0, better:'up',   color:'#39D3A0',         min:0,   max:500},
+  visceral:{key:'visceral',label:'Graisse viscérale', short:'Viscé.', icon:'target',  kind:'scalar', unit:'',     dec:0, better:'down', color:'#FB7185',         min:1,   max:60},
+  bmr    : {key:'bmr',    label:'Métabolisme de base',short:'MB',     icon:'bolt',  kind:'scalar', unit:'kcal', dec:0, better:'up',   color:'#8AB4F8',         min:800, max:4000},
+  metaAge: {key:'metaAge',label:'Âge métabolique',    short:'Âge mét.',icon:'hourglass', kind:'scalar', unit:'ans',  dec:0, better:'down', color:'#A7B2C4',         min:10,  max:99},
+  waist  : {key:'waist',  label:'Tour de taille',     short:'Taille', icon:'ruler',  kind:'scalar', unit:'cm',   dec:1, better:'down', color:'#F2789B',         min:40,  max:200},
+  hips   : {key:'hips',   label:'Tour de hanches',    short:'Hanches',icon:'ruler',  kind:'scalar', unit:'cm',   dec:1, better:'down', color:'#D8A0F0',         min:40,  max:200},
+  chest  : {key:'chest',  label:'Tour de poitrine',   short:'Poitr.', icon:'ruler',  kind:'scalar', unit:'cm',   dec:1, better:'flat', color:'#7FD7FF',         min:40,  max:200},
+  arm    : {key:'arm',    label:'Tour de bras',       short:'Bras',   icon:'ruler',  kind:'scalar', unit:'cm',   dec:1, better:'up',   color:'#9AE6B4',         min:15,  max:80},
+  thigh  : {key:'thigh',  label:'Tour de cuisse',     short:'Cuisse', icon:'ruler',  kind:'scalar', unit:'cm',   dec:1, better:'up',   color:'#B7E4C7',         min:25,  max:100},
+  neck   : {key:'neck',   label:'Tour de cou',        short:'Cou',    icon:'ruler',  kind:'scalar', unit:'cm',   dec:1, better:'down', color:'#C3B0FF',         min:20,  max:70},
+  steps  : {key:'steps',  label:'Pas',                short:'Pas',    icon:'steps',  kind:'scalar', unit:'pas',  dec:0, better:'up',   color:'#38BDF8',         min:0,   max:100000},
+  sleep  : {key:'sleep',  label:'Sommeil',            short:'Sommeil',icon:'moon',  kind:'scalar', unit:'h',    dec:1, better:'up',   color:'#9A7BFF',         min:0,   max:16},
+  mood   : {key:'mood',   label:'Forme du jour',      short:'Forme',  icon:'heart',  kind:'scalar', unit:'/5',   dec:0, better:'up',   color:'#F5C56B',         min:1,   max:5},
   /* Dérivées — jamais saisies */
-  bmi    : {key:'bmi',    label:'IMC',                short:'IMC',    emoji:'📐', kind:'derived',unit:'',     dec:1, better:'down', color:'var(--m-imc)'},
-  lean   : {key:'lean',   label:'Masse maigre',       short:'Maigre', emoji:'🦾', kind:'derived',unit:'kg',   dec:1, better:'up',   color:'var(--m-maigre)'},
-  sport  : {key:'sport',  label:'Sport',              short:'Sport',  emoji:'🏃', kind:'derived',unit:'min',  dec:0, better:'up',   color:'var(--m-sport)', module:'sport'}
+  bmi    : {key:'bmi',    label:'IMC',                short:'IMC',    icon:'gauge',  kind:'derived',unit:'',     dec:1, better:'down', color:'var(--m-imc)'},
+  lean   : {key:'lean',   label:'Masse maigre',       short:'Maigre', icon:'layers',  kind:'derived',unit:'kg',   dec:1, better:'up',   color:'var(--m-maigre)'},
+  sport  : {key:'sport',  label:'Sport',              short:'Sport',  icon:'run',  kind:'derived',unit:'min',  dec:0, better:'up',   color:'var(--m-sport)', module:'sport'}
 };
 /* Ordre d'affichage à la saisie et dans le tableau. */
 const METRIC_ORDER=['weight','fat','water','muscle','bone','protein','kcalOut','kcalIn','protIn','visceral','bmr','metaAge',
@@ -351,6 +461,9 @@ function metricOn(k){
 function activeMetrics(){ return METRIC_ORDER.filter(metricOn); }
 function metricLabel(k){ return (METRICS[k]||{}).label||k; }
 function metricColor(k){ return (METRICS[k]||{}).color||'var(--acc)'; }
+function metricIcon(k){ return (METRICS[k]||{}).icon||'gauge'; }
+/* La pastille d'une mesure : l'icône, teintée de la couleur de la mesure. */
+function metricTile(k,cls){ return '<div class="'+(cls||'row-ic')+'" style="color:'+metricColor(k)+'">'+ic(metricIcon(k))+'</div>'; }
 
 /* ============================================================
    PESÉES : accès, conversions % ↔ kg, dérivées
@@ -815,11 +928,11 @@ function palOf(code){ return PAL.find(x=>x.code===code)||PAL[1]; }
    davantage que trois séances par semaine. C'est la base (NEAT) sur laquelle on ajoute
    les séances, au lieu de tout déduire du seul sport. */
 const JOBS=[
-  {code:'bureau',  f:1.20, emoji:'🪑', label:'Bureau, assis',      hint:'ordinateur, peu de marche'},
-  {code:'mixte',   f:1.30, emoji:'🚶', label:'Assis et debout',    hint:'bureau + déplacements'},
-  {code:'debout',  f:1.40, emoji:'🧍', label:'Debout la journée',  hint:'commerce, atelier, enseignement'},
-  {code:'marche',  f:1.50, emoji:'🏃', label:'Beaucoup de marche', hint:'soignant, serveur, livraison'},
-  {code:'physique',f:1.62, emoji:'🧱', label:'Métier physique',    hint:'BTP, manutention, charges lourdes'}];
+  {code:'bureau',  f:1.20, icon:'chair',    label:'Bureau, assis',      hint:'ordinateur, peu de marche'},
+  {code:'mixte',   f:1.30, icon:'walk',     label:'Assis et debout',    hint:'bureau + déplacements'},
+  {code:'debout',  f:1.40, icon:'briefcase',label:'Debout la journée',  hint:'commerce, atelier, enseignement'},
+  {code:'marche',  f:1.50, icon:'run',      label:'Beaucoup de marche', hint:'soignant, serveur, livraison'},
+  {code:'physique',f:1.62, icon:'bricks',   label:'Métier physique',    hint:'BTP, manutention, charges lourdes'}];
 function jobOf(code){ return JOBS.find(x=>x.code===code)||JOBS[0]; }
 function currentJob(){ return jobOf(state.settings.profile.job||'bureau'); }
 function autoPal(sessPerWeek){
@@ -1202,11 +1315,11 @@ const EQUIV=[
 function equivFor(kg){ let best=null; for(const e of EQUIV) if(kg>=e[0]-1e-9) best=e; return best; }
 function equivShort(kg){ const e=equivFor(kg); return e?('≈ '+e[1]):null; }
 function equivLine(kg){ const e=equivFor(kg); if(!e) return null;
-  return e[2]+' Tu portes '+e[1]+' en moins, toute la journée, à chaque escalier.'; }
+  return 'Tu portes '+e[1]+' en moins, toute la journée, à chaque escalier.'; }
 function fatVolumeLine(kgFat){ if(kgFat==null||kgFat<1) return null;
-  const L=kgFat/0.9; return '🧈 '+nf(L,1)+' litres de graisse en moins — l’équivalent de '+Math.round(L)+' '+plural(Math.round(L),'brique')+' de lait.'; }
+  const L=kgFat/0.9; return nf(L,1)+' litres de graisse en moins — l’équivalent de '+Math.round(L)+' '+plural(Math.round(L),'brique')+' de lait.'; }
 function effortLine(kg){ if(kg==null||kg<2) return null;
-  return '🚶 Sur 10 000 pas, tu transportes environ '+Math.round(kg*7)+' kcal d’effort en moins qu’au départ.'; }
+  return 'Sur 10 000 pas, tu transportes environ '+Math.round(kg*7)+' kcal d’effort en moins qu’au départ.'; }
 
 /* ============================================================
    PALIERS (milestones)
@@ -1214,39 +1327,39 @@ function effortLine(kg){ if(kg==null||kg<2) return null;
 function milestoneDefs(){
   return cached('msdefs',()=>{
     const w0=startWeight(), tg=targetWeight(), L=[];
-    const push=(code,kind,th,label,emoji,why,bmi)=>L.push({code:code,kind:kind,th:th,label:label,emoji:emoji,why:why||null,bmi:bmi||null});
+    const push=(code,kind,th,label,icon,why,bmi)=>L.push({code:code,kind:kind,th:th,label:label,icon:icon,why:why||null,bmi:bmi||null});
     if(w0!=null){
       [1,2,2.5,3,5,7.5,10,12.5,15,17.5,20,25,30,35,40,45,50].forEach(k=>{
-        if(tg==null||w0-k>=tg-0.001) push('lost'+String(k).replace('.','_'),'lost',k,MINUS+nf(k,1)+' kg au compteur','🔻'); });
+        if(tg==null||w0-k>=tg-0.001) push('lost'+String(k).replace('.','_'),'lost',k,MINUS+nf(k,1)+' kg au compteur','trend'); });
       const floor=(tg!=null)?Math.floor(tg/5)*5:Math.max(50,Math.floor(w0/5)*5-15);
       for(let w=Math.floor(w0/5)*5; w>=floor; w-=5){
         if(w>=w0) continue;
-        push('under'+w,'under',w,'Passer sous '+w+' kg',(w%10===0)?'🎯':'✨',(w%10===0)?'Le premier chiffre change.':null);
+        push('under'+w,'under',w,'Passer sous '+w+' kg',(w%10===0)?'target':'sparkle',(w%10===0)?'Le premier chiffre change.':null);
       }
       [35,30,27,25].forEach(b=>{ const wt=weightForBmi(b);
-        if(wt!=null&&wt<w0) push('bmi'+b,'under',Math.round(wt*10)/10,'IMC sous '+b,'📉','soit '+fmtKg(wt),b); });
+        if(wt!=null&&wt<w0) push('bmi'+b,'under',Math.round(wt*10)/10,'IMC sous '+b,'gauge','soit '+fmtKg(wt),b); });
       /* Deux paliers « miroir » qui parlent plus qu'un chiffre rond. */
       [10,20,25].forEach(pc=>{ const k=Math.round(w0*pc/100*10)/10;
-        if(tg==null||w0-k>=tg-0.001) push('rel'+pc,'lost',k,pc+' % de ton poids de départ','🪞','soit '+fmtKg(k)); });
+        if(tg==null||w0-k>=tg-0.001) push('rel'+pc,'lost',k,pc+' % de ton poids de départ','layers','soit '+fmtKg(k)); });
       if(metricOn('fat')){
-        [1,2,3,5,7.5,10,12.5,15,20].forEach(k=>push('fat'+String(k).replace('.','_'),'fatlost',k,MINUS+nf(k,1)+' kg de masse grasse','🫀'));
-        [35,32,30,28,25,22,20,18,15].forEach(pc=>push('fatp'+pc,'fatunder',pc,'Masse grasse sous '+pc+' %','📐'));
+        [1,2,3,5,7.5,10,12.5,15,20].forEach(k=>push('fat'+String(k).replace('.','_'),'fatlost',k,MINUS+nf(k,1)+' kg de masse grasse','flame'));
+        [35,32,30,28,25,22,20,18,15].forEach(pc=>push('fatp'+pc,'fatunder',pc,'Masse grasse sous '+pc+' %','flame'));
       }
     }
-    [10,25,33,50,66,75,90].forEach(p=>push('pct'+p,'pct',p,p+' % du chemin','🧭'));
-    [3,7,14,21,30,60,100,150,200,300,365].forEach(d=>push('streak'+d,'streak',d,d+' jours de suite','🔥'));
-    [10,25,50,100,150,250,365,500].forEach(n=>push('count'+n,'count',n,n+' pesées enregistrées','📔'));
-    [2,4,8,12,26,52,104].forEach(w=>push('weeks'+w,'weeks',w,w+' '+plural(w,'semaine')+' de suivi','📆'));
-    if((state.motivations||[]).length) [1,3,5].forEach(n=>push('why'+n,'motivations',n,n===1?'Une raison écrite':n+' raisons écrites','💭'));
+    [10,25,33,50,66,75,90].forEach(p=>push('pct'+p,'pct',p,p+' % du chemin','target'));
+    [3,7,14,21,30,60,100,150,200,300,365].forEach(d=>push('streak'+d,'streak',d,d+' jours de suite','bolt'));
+    [10,25,50,100,150,250,365,500].forEach(n=>push('count'+n,'count',n,n+' pesées enregistrées','table'));
+    [2,4,8,12,26,52,104].forEach(w=>push('weeks'+w,'weeks',w,w+' '+plural(w,'semaine')+' de suivi','calendar'));
+    if((state.motivations||[]).length) [1,3,5].forEach(n=>push('why'+n,'motivations',n,n===1?'Une raison écrite':n+' raisons écrites','quote'));
     if(state.settings.modules.sport){
-      [1,5,10,25,50,100,150,200,300].forEach(n=>push('sess'+n,'sessions',n,n===1?'Première séance notée':n+' séances de sport','🏋️'));
-      [5,10,25,50,100,200].forEach(h=>push('hrs'+h,'sporthours',h,h+' h d’entraînement','⏱️'));
-      [4,8,12,26,52].forEach(w=>push('spw'+w,'sportweeks',w,w+' '+plural(w,'semaine')+' d’affilée avec du sport','🔗'));
-      [3,5,8].forEach(n=>push('acts'+n,'activities',n,n+' activités différentes essayées','🎨'));
-      [5000,15000,50000,100000].forEach(k=>push('skc'+k,'sportkcal',k,nf(k,0)+' kcal brûlées en séance','🔥'));
+      [1,5,10,25,50,100,150,200,300].forEach(n=>push('sess'+n,'sessions',n,n===1?'Première séance notée':n+' séances de sport','dumbbell'));
+      [5,10,25,50,100,200].forEach(h=>push('hrs'+h,'sporthours',h,h+' h d’entraînement','clock'));
+      [4,8,12,26,52].forEach(w=>push('spw'+w,'sportweeks',w,w+' '+plural(w,'semaine')+' d’affilée avec du sport','refresh'));
+      [3,5,8].forEach(n=>push('acts'+n,'activities',n,n+' activités différentes essayées','sparkle'));
+      [5000,15000,50000,100000].forEach(k=>push('skc'+k,'sportkcal',k,nf(k,0)+' kcal brûlées en séance','flame'));
     }
-    if(state.settings.modules.kcalIn) [7,30,100,200,365].forEach(n=>push('kin'+n,'kcaldays',n,n+' '+plural(n,'jour')+' de calories notées','🍽️'));
-    if(state.settings.modules.pillbox) [7,30,100,200].forEach(n=>push('pill'+n,'pilldays',n,n+' '+plural(n,'jour')+' de pilulier complet','💊'));
+    if(state.settings.modules.kcalIn) [7,30,100,200,365].forEach(n=>push('kin'+n,'kcaldays',n,n+' '+plural(n,'jour')+' de calories notées','plate'));
+    if(state.settings.modules.pillbox) [7,30,100,200].forEach(n=>push('pill'+n,'pilldays',n,n+' '+plural(n,'jour')+' de pilulier complet','pill'));
     return L;
   });
 }
@@ -1351,14 +1464,14 @@ function celebrateMilestones(list){
   if(main.kind==='fatlost'){ const e=fatVolumeLine(main.th); if(e) extra+='<p class="muted small" style="margin-top:10px">'+esc(e)+'</p>'; }
   openSheet('Palier franchi !',
     '<div class="center" style="padding:6px 0 4px">'
-    +'<div style="font-size:52px;line-height:1">'+main.emoji+'</div>'
+    +'<div class="ms-hero">'+ic(main.icon,'ic--xl')+'</div>'
     +'<div style="font-size:22px;font-weight:700;margin-top:8px">'+esc(main.label)+'</div>'
     +'<p class="muted" style="margin:10px auto 0;max-width:300px;font-size:14.5px;line-height:1.5">'+esc(milestoneCheer(main))+'</p>'
     +extra
     +(others.length?'<div class="chip-wrap" style="justify-content:center;margin-top:14px">'
-        +others.map(d=>'<span class="chip">'+d.emoji+' '+esc(d.label)+'</span>').join('')+'</div>':'')
+        +others.map(d=>'<span class="chip">'+ic(d.icon,'ic--sm')+' '+esc(d.label)+'</span>').join('')+'</div>':'')
     +'</div>'
-    +'<button class="btn btn--primary btn--block" data-act="close-sheet" style="margin-top:20px">Continuer 💪</button>');
+    +'<button class="btn btn--primary btn--block" data-act="close-sheet" style="margin-top:20px">Continuer</button>');
 }
 function nextMilestone(){
   const seen={}; (state.milestones||[]).forEach(m=>seen[m.code]=1);
@@ -1403,93 +1516,93 @@ function nextMilestone(){
    ============================================================ */
 function buildInsights(){
   const out=[];
-  const add=(id,prio,emoji,text,route,tone)=>{ if(text) out.push({id:id,prio:prio,emoji:emoji,text:text,route:route||null,tone:tone||'neutral'}); };
+  const add=(id,prio,icon,text,route,tone)=>{ if(text) out.push({id:id,prio:prio,icon:icon,text:text,route:route||null,tone:tone||'neutral'}); };
   const nW=weighIns().length;
   const ref=refWeight(), tr=trendRate(), rate=bestRate(), lost=kgLost();
   const st=streakInfo();
 
-  if(!hasWeightToday()) add('saisie_manquante',100,'⚖️','Pas encore pesé aujourd’hui. Dix secondes et c’est fait.');
-  else add('saisie_ok',99,'✓','Pesée du jour enregistrée'+(st.days>1?' — '+st.days+' jours d’affilée.':'.'));
+  if(!hasWeightToday()) add('saisie_manquante',100,'scale','Pas encore pesé aujourd’hui. Dix secondes et c’est fait.');
+  else add('saisie_ok',99,'check','Pesée du jour enregistrée'+(st.days>1?' — '+st.days+' jours d’affilée.':'.'));
 
   const last=lastWeighIn();
   if(last){ const gap=diffDays(last.date,isoToday());
-    if(gap>=3) add('retour_apres_pause',96,'👋','Content de te revoir. '+gap+' jours sans pesée : on repart d’aujourd’hui, il n’y a rien à rattraper.'); }
+    if(gap>=3) add('retour_apres_pause',96,'hand','Content de te revoir. '+gap+' jours sans pesée : on repart d’aujourd’hui, il n’y a rien à rattraper.'); }
 
   const dc=classifyDailyChange();
-  if(dc.code==='retention_eau') add('retention_eau',88,'🌊',dc.text,'/courbes');
-  else if(dc.code==='bruit') add('bruit_journalier',60,'📏',dc.text);
-  else if(dc.code==='baisse_forte') add('baisse_forte',70,'📉',dc.text);
+  if(dc.code==='retention_eau') add('retention_eau',88,'droplet',dc.text,'/courbes');
+  else if(dc.code==='bruit') add('bruit_journalier',60,'ruler',dc.text);
+  else if(dc.code==='baisse_forte') add('baisse_forte',70,'trend',dc.text);
 
   const pl=detectPlateau();
   if(pl.isPlateau){
     const cf=compDelta(PICK_FATK,Math.max(21,pl.sinceDays));
     if(cf.ok&&cf.delta<=-0.5)
-      add('plateau_gras',86,'🔍','Ton poids fait une pause depuis '+pl.sinceDays+' jours, mais ta masse grasse a baissé de '+fmtKg(-cf.delta)+'. La balance ne raconte qu’une partie de l’histoire.','/analyse','pos');
+      add('plateau_gras',86,'search','Ton poids fait une pause depuis '+pl.sinceDays+' jours, mais ta masse grasse a baissé de '+fmtKg(-cf.delta)+'. La balance ne raconte qu’une partie de l’histoire.','/analyse','pos');
     else
-      add('plateau',82,'🪨','Ton poids fait une pause depuis '+pl.sinceDays+' jours (±0,15 kg/semaine). C’est la phase la plus normale d’une perte de poids.','/courbes');
+      add('plateau',82,'layers','Ton poids fait une pause depuis '+pl.sinceDays+' jours (±0,15 kg/semaine). C’est la phase la plus normale d’une perte de poids.','/courbes');
   }
   if(tr.ok&&ref.kg&&tr.kgWeek<0){
     const pctWeek=100*(-tr.kgWeek)/ref.kg;
-    if(pctWeek>1.2) add('rythme_rapide',81,'🐢','Tu perds '+nf(pctWeek,1)+' % de ton poids par semaine. Au-delà de 1 % par semaine, la part de masse maigre perdue augmente mécaniquement.','/analyse');
+    if(pctWeek>1.2) add('rythme_rapide',81,'gauge','Tu perds '+nf(pctWeek,1)+' % de ton poids par semaine. Au-delà de 1 % par semaine, la part de masse maigre perdue augmente mécaniquement.','/analyse');
   }
   const qual=lossQuality(28);
   if(qual.ok&&qual.ratio<0.25)
-    add('perte_maigre',80,'🥩','Sur 28 jours, '+qual.pct+' % seulement de ce que tu as perdu est de la graisse d’après ta balance. À lire en tendance : l’impédance n’est pas une mesure au dixième.','/analyse');
+    add('perte_maigre',80,'meat','Sur 28 jours, '+qual.pct+' % seulement de ce que tu as perdu est de la graisse d’après ta balance. À lire en tendance : l’impédance n’est pas une mesure au dixième.','/analyse');
   else if(qual.ok&&qual.ratio>=0.5)
-    add('qualite_perte',72,'🫀',qual.pct+' % de ce que tu as perdu est de la graisse. Qualité de perte '+qual.label+'.','/analyse','pos');
+    add('qualite_perte',72,'heart',qual.pct+' % de ce que tu as perdu est de la graisse. Qualité de perte '+qual.label+'.','/analyse','pos');
 
   if(lost!=null&&lost>=0.5&&startDate())
-    add('perte_totale',78,'🔻',fmtKg(lost)+' perdus depuis le '+fmtDateShort(startDate())+' ('+sinceStartDays()+' jours).','/courbes','pos');
+    add('perte_totale',78,'trend',fmtKg(lost)+' perdus depuis le '+fmtDateShort(startDate())+' ('+sinceStartDays()+' jours).','/courbes','pos');
 
   const ed=etaDays();
-  if(ed!=null&&ed>0) add('eta',77,'🎯','À ce rythme, objectif atteint vers le '+fmtDateLong(etaDate())+' (dans '+humanDuration(ed)+').','/objectif');
+  if(ed!=null&&ed>0) add('eta',77,'target','À ce rythme, objectif atteint vers le '+fmtDateLong(etaDate())+' (dans '+humanDuration(ed)+').','/objectif');
   else if(targetWeight()!=null&&rate!=null&&rate>=-0.05)
-    add('eta_pause',77,'⏳','Ton poids fait une pause : pas de date fiable pour l’instant. Elle reviendra dès que la baisse repart.','/objectif');
+    add('eta_pause',77,'hourglass','Ton poids fait une pause : pas de date fiable pour l’instant. Elle reviendra dès que la baisse repart.','/objectif');
 
   if(tr.ok&&tr.significant&&tr.kgWeek<0)
-    add('rythme_actuel',76,'📉','Tu perds '+fmtKg(-tr.kgWeek)+' par semaine en ce moment, sur '+tr.n+' pesées.','/courbes','pos');
+    add('rythme_actuel',76,'trend','Tu perds '+fmtKg(-tr.kgWeek)+' par semaine en ce moment, sur '+tr.n+' pesées.','/courbes','pos');
 
   if(state.settings.modules.kcalIn){
     const td=tdeeObserved();
     if(td.ok){
       const scale=lastScaleKcal();
-      add('depense_reelle',75,'🔥','D’après ce que tu manges ('+nf(td.intake,0)+' kcal/jour) et ce que tu perds, ta dépense réelle tourne autour de '+nf(td.kcal,0)+' kcal par jour.'
+      add('depense_reelle',75,'flame','D’après ce que tu manges ('+nf(td.intake,0)+' kcal/jour) et ce que tu perds, ta dépense réelle tourne autour de '+nf(td.kcal,0)+' kcal par jour.'
         +(scale?' Ta balance affiche '+nf(scale,0)+' : elle estime, elle ne mesure pas.':''),'/analyse');
     }
     const xc=crossCorrIntakeWeight();
     if(xc.ok&&xc.solid&&xc.best.lag>=2)
-      add('lag_calories',74,'🍽️','Chez toi, un gros apport se voit surtout '+xc.best.lag+' '+plural(xc.best.lag,'jour')+' après : +1 000 kcal ≈ '+sgnKg(xc.best.beta*1000)+', sur '+xc.best.n+' journées comparées.','/courbes');
+      add('lag_calories',74,'plate','Chez toi, un gros apport se voit surtout '+xc.best.lag+' '+plural(xc.best.lag,'jour')+' après : +1 000 kcal ≈ '+sgnKg(xc.best.beta*1000)+', sur '+xc.best.n+' journées comparées.','/courbes');
     else if(xc.ok&&xc.solid&&xc.best.lag===1)
-      add('lag_calories',74,'🍽️','Chez toi, ce que tu manges se voit dès le lendemain matin : +1 000 kcal ≈ '+sgnKg(xc.best.beta*1000)+', sur '+xc.best.n+' journées comparées.','/courbes');
+      add('lag_calories',74,'plate','Chez toi, ce que tu manges se voit dès le lendemain matin : +1 000 kcal ≈ '+sgnKg(xc.best.beta*1000)+', sur '+xc.best.n+' journées comparées.','/courbes');
     const eb=energyBalance();
     if(eb.ok&&eb.ratio!=null){
-      if(eb.ratio>=0.8&&eb.ratio<=1.25) add('deficit_ok',73,'✅','Ton déficit prévoyait '+fmtKg(-eb.expectedKgWeek)+'/semaine, tu perds '+fmtKg(-eb.actualKgWeek)+'/semaine : ça colle. Tes chiffres sont fiables.','/analyse','pos');
-      else if(eb.ratio>1.25) add('deficit_vite',73,'💨','Tu perds plus vite que ce que ton déficit prévoit. Souvent de l’eau et du glycogène en début de période — ça se stabilisera.','/analyse');
-      else if(eb.ratio>=0.4) add('deficit_lent',73,'🔎','Tu perds moins vite que le calcul ('+Math.round(eb.ratio*100)+' % du prévu). Les trois causes les plus fréquentes : des calories non comptées, une dépense réelle plus basse que l’estimation, ou de l’eau qui masque la perte.','/analyse');
-      else add('deficit_ecart',73,'🔎','Gros écart entre le calcul et la réalité. Le plus souvent, ce sont les portions estimées. Fie-toi à ta dépense observée plutôt qu’au théorique.','/analyse');
+      if(eb.ratio>=0.8&&eb.ratio<=1.25) add('deficit_ok',73,'check','Ton déficit prévoyait '+fmtKg(-eb.expectedKgWeek)+'/semaine, tu perds '+fmtKg(-eb.actualKgWeek)+'/semaine : ça colle. Tes chiffres sont fiables.','/analyse','pos');
+      else if(eb.ratio>1.25) add('deficit_vite',73,'bolt','Tu perds plus vite que ce que ton déficit prévoit. Souvent de l’eau et du glycogène en début de période — ça se stabilisera.','/analyse');
+      else if(eb.ratio>=0.4) add('deficit_lent',73,'search','Tu perds moins vite que le calcul ('+Math.round(eb.ratio*100)+' % du prévu). Les trois causes les plus fréquentes : des calories non comptées, une dépense réelle plus basse que l’estimation, ou de l’eau qui masque la perte.','/analyse');
+      else add('deficit_ecart',73,'search','Gros écart entre le calcul et la réalité. Le plus souvent, ce sont les portions estimées. Fie-toi à ta dépense observée plutôt qu’au théorique.','/analyse');
     }
   }
   const wd=weekdayEffect();
   if(wd.ok&&wd.notable){
     let t='Ton poids du '+wd.hi.label+' est en moyenne '+fmtKg(wd.gap)+' au-dessus de ton '+wd.lo.label+'. C’est le rythme de ta semaine, pas de la graisse qui apparaît et disparaît.';
     if(wd.hi.dow===0||wd.hi.dow===1) t+=' Le classique effet week-end.';
-    add('effet_weekend',68,'📅',t,'/analyse');
+    add('effet_weekend',68,'calendar',t,'/analyse');
   }
   if(state.settings.modules.sport){
     const se=sportEffect();
-    if(se.ok&&se.diff<-0.15) add('sport_effet',66,'💪','Les semaines où tu t’entraînes au moins deux fois, tu perds en moyenne '+fmtKg(-se.diff)+' de plus ('+se.nA+' semaines actives contre '+se.nB+' calmes).','/sport','pos');
-    else if(se.ok&&Math.abs(se.diff)<=0.15) add('sport_effet',66,'💪','Pas d’écart net entre tes semaines avec et sans entraînement sur la balance. Le sport agit surtout sur ce que la balance ne voit pas : le muscle gardé et la forme.','/sport');
-    else if(se.ok) add('sport_effet',66,'🌊','Tes semaines actives montrent un peu moins de perte. C’est classique : après une grosse séance, le muscle retient de l’eau pendant 24 à 72 h.','/sport');
+    if(se.ok&&se.diff<-0.15) add('sport_effet',66,'dumbbell','Les semaines où tu t’entraînes au moins deux fois, tu perds en moyenne '+fmtKg(-se.diff)+' de plus ('+se.nA+' semaines actives contre '+se.nB+' calmes).','/sport','pos');
+    else if(se.ok&&Math.abs(se.diff)<=0.15) add('sport_effet',66,'dumbbell','Pas d’écart net entre tes semaines avec et sans entraînement sur la balance. Le sport agit surtout sur ce que la balance ne voit pas : le muscle gardé et la forme.','/sport');
+    else if(se.ok) add('sport_effet',66,'droplet','Tes semaines actives montrent un peu moins de perte. C’est classique : après une grosse séance, le muscle retient de l’eau pendant 24 à 72 h.','/sport');
   }
   const mus=compDelta(PICK_MUSK,28), wch=compDelta(PICK_W,28);
   if(mus.ok&&wch.ok&&Math.abs(mus.delta)<=0.5&&wch.delta<=-2)
-    add('muscle_garde',65,'🦾','Tu as perdu '+fmtKg(-wch.delta)+' sans perdre de muscle. C’est exactement le but. (mesure d’impédance : à lire en tendance)','/analyse','pos');
+    add('muscle_garde',65,'layers','Tu as perdu '+fmtKg(-wch.delta)+' sans perdre de muscle. C’est exactement le but. (mesure d’impédance : à lire en tendance)','/analyse','pos');
 
   const nm=nextMilestone();
   if(nm&&rate!=null&&rate<0&&(nm.def.kind==='under'||nm.def.kind==='lost'))
-    add('prochain_palier',64,nm.def.emoji,nm.def.label+' : '+nm.remainText+' — environ '+humanDuration(Math.ceil(nm.rem/(-rate/7)))+' au rythme actuel.','/objectif');
+    add('prochain_palier',64,nm.def.icon,nm.def.label+' : '+nm.remainText+' — environ '+humanDuration(Math.ceil(nm.rem/(-rate/7)))+' au rythme actuel.','/objectif');
 
-  if(nW<8) add('donnees_insuffisantes',30,'🌱','Encore quelques pesées et je pourrai calculer ta tendance. Une par matin suffit.');
+  if(nW<8) add('donnees_insuffisantes',30,'sprout','Encore quelques pesées et je pourrai calculer ta tendance. Une par matin suffit.');
   return out;
 }
 const INSIGHT_MAX_HOME=3;
@@ -1521,24 +1634,24 @@ function fallbackTip(){
   const rate=bestRate(), lost=kgLost();
   const fat=totalDelta(PICK_FATK), mus=totalDelta(PICK_MUSK);
   const T=[];
-  T.push({id:'water',emoji:'💧',text:'Une variation d’un kilo du jour au lendemain, c’est de l’eau, pas du gras. Regarde la ligne de tendance, pas le point.'});
-  if(adherencePct()!=null&&adherencePct()<80) T.push({id:'sameTime',emoji:'⏰',text:'Le meilleur moment pour se peser : le matin, après être passé aux toilettes, avant de manger. Toujours le même. Le reste, c’est du bruit.'});
-  if(rate!=null&&rate>-0.1&&rate<0.1&&(sinceStartDays()||0)>21) T.push({id:'plateau',emoji:'🪨',text:'Ta courbe fait un palier. C’est la phase la plus normale du monde : le corps se réajuste. Ne change rien pendant dix jours, et regarde.'});
-  if(rate!=null&&rate<-1.2) T.push({id:'fast',emoji:'🐢',text:'Tu perds vite. Sur la durée, entre 0,4 et 0,8 kg par semaine, c’est plus tenable — et on garde plus de muscle.'});
-  if(mus&&mus.delta<-0.5) T.push({id:'muscle',emoji:'🥩',text:'Ta masse musculaire baisse un peu en même temps que le poids. Un peu de résistance et des protéines aident à ne perdre que le gras.'});
+  T.push({id:'water',icon:'droplet',text:'Une variation d’un kilo du jour au lendemain, c’est de l’eau, pas du gras. Regarde la ligne de tendance, pas le point.'});
+  if(adherencePct()!=null&&adherencePct()<80) T.push({id:'sameTime',icon:'clock',text:'Le meilleur moment pour se peser : le matin, après être passé aux toilettes, avant de manger. Toujours le même. Le reste, c’est du bruit.'});
+  if(rate!=null&&rate>-0.1&&rate<0.1&&(sinceStartDays()||0)>21) T.push({id:'plateau',icon:'layers',text:'Ta courbe fait un palier. C’est la phase la plus normale du monde : le corps se réajuste. Ne change rien pendant dix jours, et regarde.'});
+  if(rate!=null&&rate<-1.2) T.push({id:'fast',icon:'gauge',text:'Tu perds vite. Sur la durée, entre 0,4 et 0,8 kg par semaine, c’est plus tenable — et on garde plus de muscle.'});
+  if(mus&&mus.delta<-0.5) T.push({id:'muscle',icon:'meat',text:'Ta masse musculaire baisse un peu en même temps que le poids. Un peu de résistance et des protéines aident à ne perdre que le gras.'});
   if(lost!=null&&lost>=1){ const e=equivLine(lost); if(e) T.push({id:'equiv',emoji:'',text:e}); }
   if(lost!=null&&lost>=2){ const e=effortLine(lost); if(e) T.push({id:'effort',emoji:'',text:e}); }
   if(fat&&fat.delta<=-1){ const e=fatVolumeLine(-fat.delta); if(e) T.push({id:'fatVol',emoji:'',text:e}); }
-  if(streakInfo().days>=14) T.push({id:'streakWin',emoji:'🔥',text:streakInfo().days+' jours d’affilée. Ce n’est plus un effort, c’est une habitude.'});
-  if(state.settings.modules.kcalIn&&daysTracked()>=21) T.push({id:'kcalLag',emoji:'🍽️',text:'Ce que tu manges aujourd’hui se voit surtout sur la balance dans deux jours. Ne juge jamais un repas au réveil suivant.'});
+  if(streakInfo().days>=14) T.push({id:'streakWin',icon:'flame',text:streakInfo().days+' jours d’affilée. Ce n’est plus un effort, c’est une habitude.'});
+  if(state.settings.modules.kcalIn&&daysTracked()>=21) T.push({id:'kcalLag',icon:'plate',text:'Ce que tu manges aujourd’hui se voit surtout sur la balance dans deux jours. Ne juge jamais un repas au réveil suivant.'});
   if(state.settings.modules.sport){
     const w7=(state.sessions||[]).filter(s=>s.date>=addDayYMD(isoToday(),-6)).length;
-    if(w7===0) T.push({id:'sport',emoji:'🚶',text:'Pas de séance cette semaine ? Vingt minutes de marche comptent aussi. Pas besoin d’être héroïque tous les jours.'});
-    else if(w7>=3) T.push({id:'sportWin',emoji:'💪',text:w7+' séances cette semaine. C’est ça qui construit le corps qui restera après la perte.'});
+    if(w7===0) T.push({id:'sport',icon:'walk',text:'Pas de séance cette semaine ? Vingt minutes de marche comptent aussi. Pas besoin d’être héroïque tous les jours.'});
+    else if(w7>=3) T.push({id:'sportWin',icon:'dumbbell',text:w7+' séances cette semaine. C’est ça qui construit le corps qui restera après la perte.'});
   }
-  if(typeof backupOverdue==='function'&&backupOverdue()) T.push({id:'backup',emoji:'💾',text:'Pense à exporter une sauvegarde. Ce serait bête de perdre tous ces matins de saisie.',route:'/sauvegarde'});
+  if(typeof backupOverdue==='function'&&backupOverdue()) T.push({id:'backup',icon:'save',text:'Pense à exporter une sauvegarde. Ce serait bête de perdre tous ces matins de saisie.',route:'/sauvegarde'});
   const t=trendNow(), nb=t!=null?nextBmiThreshold(t):null;
-  if(nb&&nb.remainKg<=5) T.push({id:'bmiNext',emoji:'📉',text:'Encore '+fmtKg(nb.remainKg)+' et ton IMC passe sous '+nb.bmi+'. C’est le prochain vrai cap.'});
+  if(nb&&nb.remainKg<=5) T.push({id:'bmiNext',icon:'trend',text:'Encore '+fmtKg(nb.remainKg)+' et ton IMC passe sous '+nb.bmi+'. C’est le prochain vrai cap.'});
   if(!T.length) return null;
   return T[dayIndex()%T.length];
 }
@@ -1655,7 +1768,9 @@ function lineChart(series,opts){
   const W=opts.w||490, H=opts.h||CH_H, pad=padFor(opts);
   const plotW=W-pad.l-pad.r, plotH=H-pad.t-pad.b;
   const from=opts.from, to=opts.to, span=Math.max(0,dayNum(to)-dayNum(from));
-  const gap=(state.ui&&state.ui.charts&&state.ui.charts.gapDays)||2;
+  /* `opts.gap` prime sur le réglage global : une mesure mensuelle n'a pas
+     le même « trou normal » qu'une pesée quotidienne. */
+  const gap=opts.gap||(state.ui&&state.ui.charts&&state.ui.charts.gapDays)||2;
   const live=(series||[]).filter(s=>s&&s.points&&s.points.length);
   const X=d=>span?pad.l+((dayNum(d)-dayNum(from))/span)*plotW:pad.l+plotW/2;
 
@@ -1977,7 +2092,7 @@ function render(){
   try{ html=routeHTML(r,seg); }
   catch(e){ html='<div class="card"><div class="row-title">Oups</div><div class="small muted" style="margin-top:6px">'+esc(String(e&&e.message||e))+'</div></div>'; }
   const changed=r!==LAST_ROUTE;
-  view.innerHTML='<div class="screen'+(changed?'':' no-anim')+'">'+(storageBanner())+html+'</div>';
+  view.innerHTML='<div class="screen'+(changed?'':' no-anim')+'">'+updateBanner()+storageBanner()+html+'</div>';
   if(changed) window.scrollTo(0,0);
   LAST_ROUTE=r;
   postRender(r,changed);
@@ -1995,6 +2110,8 @@ function routeHTML(r,seg){
   if(r==='/paliers') return screenPaliers();
   if(r==='/motivations') return screenMotivations();
   if(r==='/analyse') return screenAnalyse();
+  if(r==='/semaine') return screenSemaine();
+  if(r==='/mensurations') return screenMensurations();
   if(r==='/simulateur') return screenSimulateur();
   if(r==='/astuces') return screenAstuces();
   if(r==='/sport') return screenSport('seances');
@@ -2013,7 +2130,8 @@ function routeHTML(r,seg){
    Analyse et Calories s'ouvrent depuis Plus, c'est donc Plus qui s'allume. */
 const TAB_COURBES=['/courbes'];
 const TAB_PLUS=['/plus','/objectif','/paliers','/motivations','/sport','/planning','/activites',
-  '/pilulier','/sauvegarde','/reglages','/metriques','/aide','/analyse','/calories','/simulateur','/astuces'];
+  '/pilulier','/sauvegarde','/reglages','/metriques','/aide','/analyse','/calories','/simulateur','/astuces',
+  '/semaine','/mensurations'];
 function tabOf(r){
   if(TAB_COURBES.indexOf(r)>=0) return '/courbes';
   if(r==='/tableau') return '/tableau';
@@ -2089,7 +2207,7 @@ function wiBody(){
 
   h+='<div class="field"><label>Note (facultatif)</label>'
     +'<textarea class="input" id="wiNote" placeholder="Ex. : resto hier soir, mal dormi, séance de jambes…">'+esc(WI.note||'')+'</textarea></div>';
-  h+='<button class="btn-add" data-act="go-metrics">⚙️ Choisir les mesures affichées</button>';
+  h+='<button class="btn-add" data-act="go-metrics">'+ic('settings','ic--sm')+'Choisir les mesures affichées</button>';
 
   h+='<div class="sheet-foot">'
     +'<button class="btn btn--primary btn--block btn--lg" data-act="wi-save">Enregistrer</button>'
@@ -2101,7 +2219,7 @@ function wiField(k){
   const M=METRICS[k];
   const prev=wiPrevEntry();
   let h='<div class="mfield" id="mrow-'+k+'"><div class="mfield-head">'
-    +'<div class="mfield-ic" style="background:color-mix(in srgb,'+M.color+' 20%,var(--bg-3))">'+M.emoji+'</div>'
+    +'<div class="mfield-ic" style="color:'+M.color+'">'+ic(M.icon)+'</div>'
     +'<div class="mfield-name">'+esc(M.label)+'</div>'
     +'<div class="mfield-delta" id="mdelta-'+k+'"></div></div>';
   if(M.kind==='comp'){
@@ -2292,7 +2410,7 @@ function homeHead(){
   return '<div class="screen-head"><div>'
     +'<h1 class="screen-title">'+esc(greeting())+(n?' '+esc(n):'')+'</h1>'
     +'<div class="screen-sub">'+esc(capit(fmtDateFull(isoToday())))+'</div></div>'
-    +'<button class="btn btn--ghost" data-act="go" data-route="/reglages" style="padding:8px 12px" aria-label="Réglages">⚙️</button></div>';
+    +'<button class="btn btn--ghost icon-btn" data-act="go" data-route="/reglages" aria-label="Réglages">'+ic('settings')+'</button></div>';
 }
 
 /* ---------- Bloc A : l'état du jour ---------- */
@@ -2314,13 +2432,13 @@ function weighNudge(){
 function statusTodo(){
   const s=streakInfo(), hr=new Date().getHours();
   let h='<div class="card card--action"><div class="today-top">'
-   +'<div class="today-ic">⚖️</div>'
+   +'<div class="today-ic is-acc">'+ic('scale')+'</div>'
    +'<div class="row-main"><div class="row-title" style="white-space:normal">'+esc(hr<12?'Pas encore pesé ce matin':'Pas de pesée aujourd’hui')+'</div>'
    +'<div class="small muted">'+esc(weighNudge())+'</div></div></div>'
    +'<button class="btn btn--primary btn--block btn--lg" data-act="weigh-in" style="margin-top:12px">'
-   +(hr<14?'⚖️ Peser ce matin':'⚖️ Noter ma pesée')+'</button>';
+   +ic('scale')+(hr<14?'Peser ce matin':'Noter ma pesée')+'</button>';
   if(hr>=20) h+='<button class="btn btn--ghost btn--block" data-act="skip-today" style="margin-top:8px">Passer mon tour aujourd’hui</button>';
-  if(s.days>0) h+='<div class="streak-line">🔥 <b>'+s.days+' '+plural(s.days,'jour')+' de suite</b>'
+  if(s.days>0) h+='<div class="streak-line">'+ic('bolt','ic--sm')+'<b>'+s.days+' '+plural(s.days,'jour')+' de suite</b>'
    +(s.jokers?' <span class="muted small">(1 joker utilisé)</span>':'')+'</div>';
   if(weighIns().length>1) h+=homeDots();
   return h+'</div>';
@@ -2331,20 +2449,20 @@ function statusDone(){
   const e=entryFor(isoToday()), s=streakInfo(), best=bestStreakDays();
   const t=e.updatedAt?new Date(e.updatedAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):null;
   let h='<div class="card"><div class="today-top">'
-   +'<div class="today-ic is-done">✓</div>'
+   +'<div class="today-ic is-done">'+ic('check')+'</div>'
    +'<div class="row-main"><div class="row-title" style="white-space:normal">'+esc(DONE_TITLES[dayIndex()%DONE_TITLES.length])+'</div>'
    +'<div class="small muted">'+fmtKg(mv(e,'weight'))+(t?' · noté à '+t:'')+'</div></div>'
    +'<button class="btn-add" data-act="weigh-in">Modifier</button></div>';
   if(isOutlier(e)) h+='<div class="small muted" style="margin-top:10px">Ce chiffre est un peu à part par rapport à ta tendance — sel, sport de la veille, mauvais sommeil : c’est normal. La tendance, elle, ne bouge presque pas.</div>';
-  h+='<div class="streak-line">🔥 <b>'+s.days+' '+plural(s.days,'jour')+' de suite</b>'
-   +(best>s.days?' <span class="muted small">· record '+best+'</span>':' <span class="muted small">· c’est ton record 🏆</span>')+'</div>';
+  h+='<div class="streak-line">'+ic('bolt','ic--sm')+'<b>'+s.days+' '+plural(s.days,'jour')+' de suite</b>'
+   +(best>s.days?' <span class="muted small">· record '+best+'</span>':' <span class="muted small">· c’est ton record</span>')+'</div>';
   if(weighIns().length>1) h+=homeDots();
   return h+'</div>';
 }
 function statusSkipped(){
   return '<div class="card"><div class="today-top">'
-   +'<div class="today-ic">🌙</div>'
-   +'<div class="row-main"><div class="row-title">Journée sans pesée. À demain 👋</div>'
+   +'<div class="today-ic">'+ic('moon')+'</div>'
+   +'<div class="row-main"><div class="row-title">Journée sans pesée. À demain.</div>'
    +'<div class="small muted">Ta série est préservée.</div></div>'
    +'<button class="btn-add" data-act="unskip-today">Finalement…</button></div></div>';
 }
@@ -2400,7 +2518,7 @@ function homeHero(){
      +statCard('Au total',dAll==null?'—':sgnKg(dAll),(dAll!=null&&dAll<0)?(equivShort(-dAll)||''):'',deltaClass(dAll,-1))
      +'</div>';
   }
-  if(stale>=3) h+='<div class="small muted" style="margin-top:10px">Dernière pesée il y a '+stale+' jours. Content de te revoir 👋</div>';
+  if(stale>=3) h+='<div class="small muted" style="margin-top:10px">Dernière pesée il y a '+stale+' jours. Content de te revoir.</div>';
   return h+'</div>';
 }
 function homeSpark(){
@@ -2452,7 +2570,7 @@ function homeAgenda(){
   const done=(typeof sessionsOnDay==='function')?sessionsOnDay(isoToday()):[];
   if(!plan.length&&!done.length&&!state.settings.modules.planning) return '';
   const now=nowMin();
-  let h='<div class="card"><div class="row-title" style="margin-bottom:8px">📅 Aujourd’hui</div>';
+  let h='<div class="card"><div class="row-title flex aic gap8" style="margin-bottom:10px">'+ic('calendar','ic--sm')+'Aujourd’hui</div>';
   if(!plan.length&&!done.length){
     h+='<div class="small muted" style="margin:4px 0 10px">Rien de prévu aujourd’hui. Repos ou envie de bouger ?</div>';
   } else {
@@ -2461,7 +2579,7 @@ function homeAgenda(){
       const did=done.some(s=>s.planKey===p.key);
       const late=!did&&p.time&&hhmmToMin(p.time)<now;
       h+='<div class="row row--wrap'+(did?' is-dim':'')+'">'
-        +'<div class="row-ic">'+(p.emoji||'🏋️')+'</div>'
+        +'<div class="row-ic row-ic--emoji">'+uem(p.emoji||'🏋️')+'</div>'
         +'<div class="row-main"><div class="row-title wrap">'+esc(p.label)+'</div>'
         +'<div class="row-sub">'+(p.time?'<span class="pill">'+esc(p.time)+'</span>':'')
         +(p.durationMin?'<span class="pill">'+fmtMin(p.durationMin)+'</span>':'')
@@ -2471,7 +2589,7 @@ function homeAgenda(){
         +'</div>';
     });
     done.filter(s=>!s.planKey).forEach(s=>{
-      h+='<div class="row"><div class="row-ic">'+actEmoji(s.activityKey)+'</div>'
+      h+='<div class="row"><div class="row-ic row-ic--emoji">'+uem(actEmoji(s.activityKey))+'</div>'
         +'<div class="row-main"><div class="row-title">'+esc(actLabel(s.activityKey))+'</div>'
         +'<div class="row-sub"><span class="pill">'+fmtMin(s.durationMin)+'</span><span class="badge badge--ok">fait ✓</span></div></div></div>';
     });
@@ -2482,7 +2600,7 @@ function homeAgenda(){
   h+='<button class="btn btn--ghost btn--block" data-act="new-session" style="margin-top:10px">+ Noter une séance</button>';
   return h+'</div>';
 }
-const SESSION_DONE=['Séance dans la poche 💪','Bien joué, c’est fait.','Une séance de plus au compteur.',
+const SESSION_DONE=['Séance dans la poche.','Bien joué, c’est fait.','Une séance de plus au compteur.',
   'Ton corps te dira merci demain.','Voilà comment on avance.'];
 
 function homeMeds(){
@@ -2498,17 +2616,17 @@ function homeMeds(){
   if(!due.length&&!na.length){
     if(!box.counts.expected) return '';
     if(reportees) return '<div class="card tap" data-act="go" data-route="/pilulier" style="display:flex;align-items:center;gap:12px;padding:12px 14px">'
-      +'<div class="row-ic">⏳</div><div class="row-main"><div class="row-title">'+reportees+' '+plural(reportees,'prise')+' '+plural(reportees,'reportée')+'</div>'
+      +'<div class="row-ic">'+ic('hourglass')+'</div><div class="row-main"><div class="row-title">'+reportees+' '+plural(reportees,'prise')+' '+plural(reportees,'reportée')+'</div>'
       +'<div class="row-sub">on t’en reparle plus tard</div></div>'+arrowHTML()+'</div>';
     return '<div class="card tap" data-act="go" data-route="/pilulier" style="display:flex;align-items:center;gap:12px;padding:12px 14px">'
-      +'<div class="row-ic" style="background:color-mix(in srgb,var(--pos) 20%,var(--bg-3))">✅</div>'
+      +'<div class="row-ic" style="color:var(--pos)">'+ic('check')+'</div>'
       +'<div class="row-main"><div class="row-title">Pilulier complet</div>'
       +'<div class="row-sub">'+box.counts.taken+' '+plural(box.counts.taken,'prise')+' sur '+box.counts.expected
       +(pillStreak()>1?' · série de '+pillStreak()+' jours':'')+'</div></div>'+arrowHTML()+'</div>';
   }
   const shown=due.slice(0,4), rest=due.length-shown.length;
   let h='<div class="card">'
-    +'<div class="today-top" style="margin-bottom:8px"><div class="row-main"><div class="row-title">💊 Prises du jour</div></div>'
+    +'<div class="today-top" style="margin-bottom:10px"><div class="row-main"><div class="row-title flex aic gap8">'+ic('pill','ic--sm')+'Prises du jour</div></div>'
     +'<div class="small muted tnum">'+box.counts.taken+'/'+box.counts.expected+'</div></div><div class="list">';
   h+=shown.map(s=>pillSlotRow(s,true)).join('');
   h+='</div>';
@@ -2548,13 +2666,13 @@ function homeGoal(){
 }
 function etaLine(ed,rate){
   if(ed==null) return 'Pas encore assez de recul pour estimer une date — encore quelques pesées et je te dis ça.';
-  if(ed===0) return 'Tu y es. 🎉';
+  if(ed===0) return 'Tu y es.';
   if(rate!=null&&Math.abs(rate)>1.2)
     return 'À ce rythme, vers le '+fmtDateLong(etaDate())+'. Attention quand même : plus d’un kilo par semaine, c’est beaucoup — le corps préfère la régularité.';
   return 'À ce rythme, tu y es vers le '+fmtDateLong(etaDate())+'.';
 }
 function goalCTA(){
-  return '<div class="card"><div class="row-title">🎯 Fixe-toi un objectif</div>'
+  return '<div class="card"><div class="row-title flex aic gap8">'+ic('target','ic--sm')+'Fixe-toi un objectif</div>'
     +'<div class="small muted" style="margin:4px 0 12px">Un cap, même approximatif, change tout : tu vois ta progression au lieu de voir un chiffre isolé. Tu pourras le modifier quand tu veux.</div>'
     +'<button class="btn btn--primary btn--block" data-act="edit-goal">Choisir mon objectif</button></div>';
 }
@@ -2562,7 +2680,7 @@ function goalReached(){
   const t=trendNow(), band=state.settings.goal.maintainBandKg||1.5, tg=targetWeight();
   const inBand=Math.abs(t-tg)<=band;
   return '<div class="card card--accent">'
-    +'<div class="row-title">🏆 Objectif atteint</div>'
+    +'<div class="row-title flex aic gap8">'+ic('trophy','ic--sm')+'Objectif atteint</div>'
     +'<div class="small muted" style="margin:4px 0 10px">'
     +(inBand?'Tu es dans ta zone de maintien ('+fmtKg(tg-band)+' – '+fmtKg(tg+band)+'). Le plus dur est fait : maintenant, on tient.'
             :'Tu as franchi ton objectif. Envie de viser plus bas, ou de passer en maintien ?')+'</div>'
@@ -2582,7 +2700,7 @@ function homeMilestone(){
   if(!next&&!done.length) return '';
   let h='<div class="card">';
   if(next){
-    h+='<div class="today-top"><div class="today-ic">'+next.def.emoji+'</div>'
+    h+='<div class="today-top"><div class="today-ic is-acc">'+ic(next.def.icon)+'</div>'
      +'<div class="row-main"><div class="stat-label">Prochain palier</div>'
      +'<div class="row-title">'+esc(next.def.label)+'</div>'
      +'<div class="small muted">'+esc(next.remainText)+(next.def.why?' · '+esc(next.def.why):'')+'</div></div></div>'
@@ -2593,7 +2711,7 @@ function homeMilestone(){
     h+=(next?'<div class="divider"></div>':'')
      +'<div class="flex between aic tap" data-act="go" data-route="/paliers">'
      +'<div style="min-width:0"><div class="stat-label">'+done.length+' '+plural(done.length,'palier')+' '+plural(done.length,'franchi')+'</div>'
-     +(der?'<div class="small muted" style="margin-top:2px">dernier : '+der.emoji+' '+esc(der.label)+'</div>':'')+'</div>'
+     +(der?'<div class="small muted flex aic gap8" style="margin-top:3px">'+ic(der.icon,'ic--sm')+esc(der.label)+'</div>':'')+'</div>'
      +arrowHTML()+'</div>';
   }
   return h+'</div>';
@@ -2644,7 +2762,7 @@ function homeInsight(){
   if(!ins) ins=fallbackTip();
   if(!ins) return '';
   return '<div class="card'+(ins.route?' tap':'')+'"'+(ins.route?(' data-act="go" data-route="'+ins.route+'"'):'')+'>'
-    +'<div class="today-top"><div class="today-ic">'+(ins.emoji||'💡')+'</div>'
+    +'<div class="today-top"><div class="today-ic is-acc">'+ic(ins.icon||'bulb')+'</div>'
     +'<div class="row-main"><div class="stat-label">Le mot du jour</div>'
     +'<div class="insight-text">'+esc(ins.text)+'</div></div>'
     +(ins.route?arrowHTML():'')+'</div></div>';
@@ -2659,14 +2777,14 @@ function homeWhy(){
   const m=motivationOfDay();
   if(!m){
     return '<div class="card card--accent">'
-      +'<div class="row-title">💭 Pourquoi tu fais ça ?</div>'
+      +'<div class="row-title flex aic gap8">'+ic('quote','ic--sm')+'Pourquoi tu fais ça ?</div>'
       +'<div class="small muted" style="margin:5px 0 12px">Écris-le une fois. Les matins difficiles, c’est ça que tu reliras — pas le chiffre.</div>'
       +'<button class="btn btn--primary btn--block" data-act="add-motivation">Écrire ma raison</button></div>';
   }
   const n=(state.motivations||[]).filter(x=>x.active!==false).length;
   return '<div class="card why-card tap" data-act="go" data-route="/motivations">'
     +'<div class="stat-label">Pourquoi tu fais ça</div>'
-    +'<div class="why-text">'+(m.emoji||'💭')+' «&nbsp;'+esc(m.text)+'&nbsp;»</div>'
+    +'<div class="why-text">'+uem(m.emoji||'💭')+' «&nbsp;'+esc(m.text)+'&nbsp;»</div>'
     +'<div class="small muted" style="margin-top:8px">'+(n>1?(n+' raisons enregistrées · une par jour ›'):'Ajouter une autre raison ›')+'</div></div>';
 }
 
@@ -2676,11 +2794,11 @@ function homeBackup(){
   const sn=state.ui.backupSnoozeUntil;
   if(sn&&isoToday()<sn) return '';
   return '<div class="card card--warn" style="margin-top:14px">'
-   +'<div class="row-title">💾 Une sauvegarde s’impose</div>'
+   +'<div class="row-title flex aic gap8">'+ic('save','ic--sm')+'Une sauvegarde s’impose</div>'
    +'<div class="small muted" style="margin:6px 0 10px">'
    +(state.meta.lastBackupAt||state.meta.lastCloudAt?'Plus d’une semaine sans copie de sécurité.':'Tes chiffres n’existent que sur ce téléphone.')
    +' '+weighIns().length+' '+plural(weighIns().length,'pesée')+' : ce serait dommage.</div>'
-   +'<button class="btn btn--primary btn--block" data-act="bk-share">📤 Sauvegarder maintenant</button>'
+   +'<button class="btn btn--primary btn--block" data-act="bk-share">'+ic('upload')+'Sauvegarder maintenant</button>'
    +'<button class="btn btn--ghost btn--block" data-act="bk-snooze" style="margin-top:8px">Plus tard</button></div>';
 }
 
@@ -2688,7 +2806,7 @@ function homeBackup(){
 function screenOnboarding(){
   const p=state.settings.profile;
   return '<div class="card hero" style="padding:26px 18px">'
-   +'<div style="font-size:44px;line-height:1">🌱</div>'
+   +'<div class="ob-mark">'+ic('sprout','ic--xl')+'</div>'
    +'<div class="hero-value" style="font-size:26px;margin-top:8px">Bienvenue sur Élan</div>'
    +'<p class="muted small" style="margin:10px auto 0;max-width:290px;line-height:1.55">Tu te pèses chaque matin. Moi, je transforme ces chiffres en progression. Tout reste sur ton téléphone.</p></div>'
    +'<div class="card" style="margin-top:12px">'
@@ -2706,7 +2824,7 @@ function screenOnboarding(){
    +'<div class="field"><label>Pourquoi tu fais ça ?</label>'
    +'<textarea class="input" id="obWhy" placeholder="Ex. : monter les escaliers sans souffler, rentrer dans ma veste préférée, tenir tout un match…"></textarea>'
    +'<div class="hint">Cette phrase te sera resservie les matins où la balance ne bouge pas.</div></div>'
-   +'<button class="btn btn--primary btn--block btn--lg" data-act="onboard-save" style="margin-top:6px">C’est parti 🚀</button>'
+   +'<button class="btn btn--primary btn--block btn--lg" data-act="onboard-save" style="margin-top:6px">C’est parti</button>'
    +'<div class="small muted center" style="margin-top:10px">Tu pourras tout modifier dans les réglages.</div>'
    +'</div>';
 }
@@ -2730,7 +2848,14 @@ function chRange(){
   if(p==='all'){ const f=state.entries.length?state.entries[0].date:addDayYMD(to,-30);
     return {from:f,to:to,span:diffDays(f,to)}; }
   const n={'30':30,'90':90,'180':182,'365':365}[p]||90;
-  return {from:addDayYMD(to,-(n-1)),to:to,span:n-1};
+  let from=addDayYMD(to,-(n-1));
+  /* La fenêtre ne remonte jamais avant la première pesée : demander « 6 mois »
+     quand on suit depuis trois semaines écrasait toute la courbe contre le bord
+     droit. Une fois qu'il y a six mois de données, le bouton reprend son sens
+     littéral — on ne perd donc rien, on évite juste un cadrage absurde. */
+  const f0=state.entries.length?state.entries[0].date:null;
+  if(f0&&f0>from) from=addDayYMD(f0,-1);
+  return {from:from,to:to,span:Math.max(1,diffDays(from,to))};
 }
 function seriesPoints(metric,unit,from,to){
   const out=[];
@@ -2767,7 +2892,7 @@ function chGoal(metric,unit){
 function screenCourbes(){
   const c=CH();
   if(!weighIns().length)
-    return head('Courbes')+empty('📈','Pas encore de courbe','Ta première pesée fera apparaître le graphique. Une seule suffit pour commencer.',
+    return head('Courbes')+empty('chart','Pas encore de courbe','Ta première pesée fera apparaître le graphique. Une seule suffit pour commencer.',
       '<button class="btn btn--primary" data-act="weigh-in">+ Saisir ma pesée</button>');
   const tabs=[['compo','Composition']];
   if(state.settings.modules.sport) tabs.push(['sport','Sport']);
@@ -2792,7 +2917,8 @@ function courbesCompo(){
   if(shown.indexOf(c.metric)<0) c.metric='weight';
   const m=c.metric, M=METRICS[m], unit=chUnit();
   let h='<div class="chip-row" style="margin-top:10px">'+shown.map(k=>
-    '<button class="chip'+(k===m?' is-active':'')+'" data-act="ch-metric" data-m="'+k+'">'+METRICS[k].emoji+' '+esc(METRICS[k].short)+'</button>').join('')+'</div>';
+    '<button class="chip'+(k===m?' is-active':'')+'" data-act="ch-metric" data-m="'+k+'">'
+    +'<span class="chip-ic" style="color:'+METRICS[k].color+'">'+ic(METRICS[k].icon,'ic--sm')+'</span>'+esc(METRICS[k].short)+'</button>').join('')+'</div>';
   if(isDualKey(m)||m==='lean')
     h+='<div style="margin:2px 0 10px">'+segHTML([['pct','%'],['kg','kg']],unit,'ch-unit','')+'</div>';
 
@@ -2836,7 +2962,7 @@ function courbesCompo(){
   if(isDualKey(m)&&m!=='bone'){
     const dp=chStats(seriesPoints(m,'pct',r.from,r.to)), dk=chStats(seriesPoints(m,'kg',r.from,r.to));
     if(dp&&dk&&dp.delta!=null&&dk.delta!=null&&(Math.sign(dp.delta)!==Math.sign(dk.delta)||Math.abs(dk.delta)>1.4*Math.abs(dp.delta*(trendNow()||100)/100))){
-      h+='<div class="insight" style="margin-top:12px"><div class="insight-ic">💡</div><div class="insight-txt">'
+      h+='<div class="insight" style="margin-top:12px"><div class="insight-ic">'+ic('bulb')+'</div><div class="insight-txt">'
        +'Sur cette période, ton <strong>pourcentage</strong> de '+esc(M.label.toLowerCase())+' a bougé de '+sgnPt(dp.delta)
        +', mais en <strong>kilos</strong> c’est '+sgnKg(dk.delta)+'. C’est la valeur en kilos qui dit la vérité : le pourcentage bouge aussi quand le poids bouge.'
        +'</div></div>';
@@ -2937,7 +3063,7 @@ function sportSplitBars(list){
   if(!rows.length) return '';
   const mx=rows[0].min||1;
   return '<div class="section-title">Répartition</div><div class="card"><div class="chart-bars">'
-   +rows.map(r=>'<div><div class="cbtop"><span class="grow" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+actEmoji(r.k)+' '+esc(actLabel(r.k))+'</span>'
+   +rows.map(r=>'<div><div class="cbtop"><span class="grow" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+uem(actEmoji(r.k))+' '+esc(actLabel(r.k))+'</span>'
      +'<span class="tnum muted nowrap">'+fmtMin(r.min)+' · '+r.cnt+'</span></div>'
      +'<div class="chart-bar-track"><div class="chart-bar-fill" data-bar="'+(r.min/mx).toFixed(3)+'" style="background:'+actColor(r.k)+'"></div></div></div>').join('')
    +'</div></div>';
@@ -2947,7 +3073,7 @@ function courbesCalories(){
   const kin=[]; state.entries.forEach(e=>{ if(e.date<r.from||e.date>r.to) return;
     const v=mv(e,'kcalIn'); if(v!=null) kin.push({date:e.date,v:v,color:'#F0A93B'}); });
   if(!kin.length)
-    return empty('🍽️','Aucune calorie notée sur la période',
+    return empty('plate','Aucune calorie notée sur la période',
       'Note le total que Yazio t’affiche le soir : c’est ce qui permet à Élan de calculer ta dépense réelle et de trouver ton décalage.',
       '<button class="btn btn--primary" data-act="quick-kcal">+ Noter mes calories</button>');
   const lag=Math.min(XC_MAX_LAG,Math.max(1,c.lag|0));   // la pesée du matin précède les repas du jour
@@ -2988,7 +3114,7 @@ function courbesCalories(){
        :(ec<0?'En moyenne <b>'+nf(-ec,0)+' kcal</b> sous ton point neutre ('+nf(neutral.kcal,0)+' kcal), soit environ <b>'+fmtKg(-ec*7/KCAL_PER_KG_FAT)+' par semaine</b> en théorie.'
              :'En moyenne <b>'+nf(ec,0)+' kcal</b> au-dessus de ton point neutre ('+nf(neutral.kcal,0)+' kcal).'))
      +'</div>'
-     +'<button class="btn btn--ghost btn--block" data-act="go" data-route="/simulateur" style="margin-top:10px">🧮 Simuler un autre niveau</button>';
+     +'<button class="btn btn--ghost btn--block" data-act="go" data-route="/simulateur" style="margin-top:10px">'+ic('calculator')+'Simuler un autre niveau</button>';
   }
 
   h+='<div class="section-title">Décaler les barres</div>'
@@ -3001,7 +3127,7 @@ function courbesCalories(){
 /* Le message sur le décalage calories → poids, gradué selon ce qu'on peut honnêtement dire. */
 function xcInsight(){
   const xc=crossCorrIntakeWeight();
-  let h='<div class="insight'+(xc.ok&&xc.tier==='solide'?'':' insight--neutral')+'" style="margin-top:12px"><div class="insight-ic">🍽️</div><div class="insight-txt">';
+  let h='<div class="insight'+(xc.ok&&xc.tier==='solide'?'':' insight--neutral')+'" style="margin-top:12px"><div class="insight-ic">'+ic('plate')+'</div><div class="insight-txt">';
   if(!xc.ok){
     const n=xc.n||0;
     h+='Encore '+Math.max(1,XC_HINT_N-n)+' '+plural(Math.max(1,XC_HINT_N-n),'journée')+' avec <strong>calories ET pesée</strong> et je te dis à quel moment ton poids réagit à ce que tu manges. Tu en as '+n+'.';
@@ -3051,9 +3177,9 @@ function courbesCroisements(){
   const W=weekBuckets(nW).filter(w=>w.past||w.weighs>0);
   const withDw=W.filter(w=>w.dw!=null);
   if(withDw.length<2)
-    return empty('🔀','Encore un peu de patience',
+    return empty('shuffle','Encore un peu de patience',
       'Ces croisements comparent tes semaines entre elles. Il en faut au moins deux complètes — tu y es presque.',
-      '<button class="btn btn--primary" data-act="weigh-in">⚖️ Saisir ma pesée</button>');
+      '<button class="btn btn--primary" data-act="weigh-in">'+ic('scale')+'Saisir ma pesée</button>');
   /* Cadrage : inutile d'etaler six mois quand on n'a que trois semaines de donnees,
      les barres s'entassent a droite et les dates se chevauchent. */
   const plein=W.filter(w=>w.dw!=null||w.kcal!=null||w.minutes>0);
@@ -3217,7 +3343,7 @@ function tblCols(){
 }
 function screenTableau(){
   if(!state.entries.length)
-    return head('Tableau')+empty('📋','Aucune donnée','Tes pesées apparaîtront ici, ligne par ligne, avec une colonne en % et une en kg.',
+    return head('Tableau')+empty('table','Aucune donnée','Tes pesées apparaîtront ici, ligne par ligne, avec une colonne en % et une en kg.',
       '<button class="btn btn--primary" data-act="weigh-in">+ Saisir ma pesée</button>');
   const t=TBL(), r=tblRange();
   let rows=tblRows(r.from,r.to);
@@ -3227,7 +3353,7 @@ function screenTableau(){
   else if(t.sort==='w_asc') rows=rows.slice().sort((a,b)=>(mv(a.e,'weight')||1e9)-(mv(b.e,'weight')||1e9));
   const shown=rows.slice(0,t.limit);
   const cols=tblCols();
-  if(t.del) cols.push({k:'del',grp:'',sub:''});   // colonne 🗑, jamais dans l'export CSV
+  if(t.del) cols.push({k:'del',grp:'',sub:''});   // colonne « supprimer », jamais dans l'export CSV
 
   let h=head('Tableau','<button class="btn-add" data-act="weigh-in">+ Pesée</button>');
   h+='<div class="filterbar">'
@@ -3240,9 +3366,9 @@ function screenTableau(){
    +'</div>'
    +'<div class="filterbar">'
    +'<button class="chip'+(t.showGaps?' is-active':'')+'" data-act="tbl-toggle" data-k="showGaps">Jours manquants</button>'
-   +'<button class="chip'+(t.del?' is-active':'')+'" data-act="tbl-toggle" data-k="del">'+(t.del?'✕ Terminer':'🗑 Supprimer…')+'</button>'
+   +'<button class="chip'+(t.del?' is-active':'')+'" data-act="tbl-toggle" data-k="del">'+(t.del?ic('close','ic--sm')+'Terminer':ic('trash','ic--sm')+'Supprimer…')+'</button>'
    +'<button class="chip" data-act="tbl-csv">⤓ Export CSV</button>'
-   +'<button class="chip" data-act="go-metrics">⚙️ Colonnes</button>'
+   +'<button class="chip" data-act="go-metrics">'+ic('settings','ic--sm')+'Colonnes</button>'
    +'</div>';
 
   /* La régularité ne se calcule que sur les jours réellement écoulés depuis la première
@@ -3293,7 +3419,7 @@ function screenTableau(){
 function tblCell(c,rw){
   const e=rw.e;
   const na='<span class="miss" aria-label="non saisi">—</span>';
-  if(c.k==='del') return '<td><button class="pill-btn pill-btn--no" data-act="tbl-del" data-date="'+e.date+'" aria-label="Supprimer la pesée du '+esc(fmtDateLong(e.date))+'">🗑</button></td>';
+  if(c.k==='del') return '<td><button class="pill-btn pill-btn--no" data-act="tbl-del" data-date="'+e.date+'" aria-label="Supprimer la pesée du '+esc(fmtDateLong(e.date))+'">'+ic('trash','ic--sm')+'</button></td>';
   if(c.k==='date') return '<td class="col-date">'+esc(fmtTblDate(e.date))+'</td>';
   if(c.k==='note') return '<td class="col-note">'+esc(e.note||'')+'</td>';
   if(c.k==='dweight'){
@@ -3363,7 +3489,7 @@ function seedActivities(){
 }
 function actByKey(k){ return (state.activities||[]).find(a=>a.key===k)||null; }
 function actLabel(k){ const a=actByKey(k); return a?a.label:'Activité supprimée'; }
-function actEmoji(k){ const a=actByKey(k); return a?a.emoji:'❓'; }
+function actEmoji(k){ const a=actByKey(k); return a?a.emoji:'•'; }
 function actColor(k){ const a=actByKey(k); return a?a.color:'#8A97AD'; }
 function activeActivities(){ return (state.activities||[]).filter(a=>!a.archived).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)); }
 function recentActivities(n){
@@ -3419,7 +3545,7 @@ function sessionSheetBody(){
   const acts=SS.showAll?activeActivities():recentActivities(6);
   const a=actByKey(SS.activityKey);
   let h='<div class="chip-row">'
-    +acts.map(x=>'<button class="chip chip--act'+(x.key===SS.activityKey?' is-active':'')+'" data-act="ss-act" data-key="'+x.key+'">'+x.emoji+' '+esc(x.label)+'</button>').join('')
+    +acts.map(x=>'<button class="chip chip--act'+(x.key===SS.activityKey?' is-active':'')+'" data-act="ss-act" data-key="'+x.key+'">'+uem(x.emoji)+' '+esc(x.label)+'</button>').join('')
     +'<button class="chip chip--act" data-act="ss-act-all">'+(SS.showAll?'▲ Moins':'⋯ Toutes')+'</button></div>';
   h+='<div class="field"><label>Durée</label>'
     +'<div class="flex aic gap8" style="justify-content:center;margin:6px 0">'
@@ -3583,20 +3709,20 @@ function hasTrainingOnDay(d){
 /* Trois onglets, trois questions distinctes : ce que j'ai fait, ce que je vais faire,
    et avec quoi. Avant, ces trois choses étaient réparties sur trois écrans qui se
    renvoyaient l'un à l'autre — personne ne savait plus où chercher quoi. */
-const SPORT_TABS=[['seances','🏋️ Mes séances','/sport'],
-                  ['planning','📅 Mon planning','/planning'],
-                  ['activites','⚙️ Mes activités','/activites']];
+const SPORT_TABS=[['seances','dumbbell','Mes séances','/sport'],
+                  ['planning','calendar','Mon planning','/planning'],
+                  ['activites','settings','Mes activités','/activites']];
 function screenSport(tab){
   tab=SPORT_TABS.some(t=>t[0]===tab)?tab:'seances';
   if(!state.settings.modules.sport){ return backHead('Sport','/plus')
-    +empty('🏃','Le module sport est désactivé','Active-le pour noter tes séances, prévoir tes créneaux et voir ton calendrier d’entraînement. Rien n’a été perdu.',
+    +empty('run','Le module sport est désactivé','Active-le pour noter tes séances, prévoir tes créneaux et voir ton calendrier d’entraînement. Rien n’a été perdu.',
       '<button class="btn btn--primary" data-act="mod-on" data-k="sport">Activer le sport</button>'); }
   const act=tab==='seances'?'<button class="btn-add" data-act="new-session">+ Séance</button>'
     :tab==='planning'?'<button class="btn-add" data-act="new-plan">+ Créneau</button>'
     :'<button class="btn-add" data-act="new-activity">+ Activité</button>';
   let h=backHead('Sport','/plus',act);
   h+='<div class="subtabs">'+SPORT_TABS.map(t=>
-    '<button class="subtab'+(tab===t[0]?' is-active':'')+'" data-act="go" data-route="'+t[2]+'">'+esc(t[1])
+    '<button class="subtab'+(tab===t[0]?' is-active':'')+'" data-act="go" data-route="'+t[3]+'">'+ic(t[1],'ic--sm')+esc(t[2])
     +(t[0]==='planning'&&pendingConfirm().length?'<span class="pastille--num">'+pendingConfirm().length+'</span>':'')
     +'</button>').join('')+'</div>';
   if(tab==='planning') return h+sportPlanningView();
@@ -3628,7 +3754,7 @@ function sportSessionsView(){
   }
   const sw=streakWeeks(), sd=sportStreakDays();
   if(sw>0||sd>1){
-    h+='<div class="card" style="margin-top:12px"><div class="row-title">🔥 Régularité</div>'
+    h+='<div class="card" style="margin-top:12px"><div class="row-title flex aic gap8">'+ic('bolt','ic--sm')+'Régularité</div>'
      +'<div class="small muted" style="margin-top:4px">'+(sw>0?sw+' '+plural(sw,'semaine')+' d’affilée avec au moins une séance.':'')
      +(sd>1?' '+sd+' jours d’affilée.':'')+'</div></div>';
   }
@@ -3638,12 +3764,12 @@ function sportSessionsView(){
   if(last.length){
     h+='<div class="section-title">Dernières séances</div><div class="list">'
      +last.map(s=>'<div class="row" data-act="edit-session" data-id="'+s.id+'">'
-       +'<div class="row-ic" style="background:color-mix(in srgb,'+actColor(s.activityKey)+' 22%,var(--bg-3))">'+actEmoji(s.activityKey)+'</div>'
+       +'<div class="row-ic" style="background:color-mix(in srgb,'+actColor(s.activityKey)+' 22%,var(--bg-3))">'+uem(actEmoji(s.activityKey))+'</div>'
        +'<div class="row-main"><div class="row-title">'+esc(actLabel(s.activityKey))+'</div>'
        +'<div class="row-sub">'+esc(capit(fmtDayLabel(s.date)))+' <span class="pill">'+fmtMin(s.durationMin)+'</span>'
        +(s.kcal?'<span class="pill">≈ '+nf(s.kcal,0)+' kcal</span>':'')+'</div></div>'+arrowHTML()+'</div>').join('')
      +'</div>';
-  } else h+=empty('🏋️','Aucune séance pour l’instant','Note ta première séance : marche, muscu, badminton… tout compte.',
+  } else h+=empty('dumbbell','Aucune séance pour l’instant','Note ta première séance : marche, muscu, badminton… tout compte.',
       '<button class="btn btn--primary" data-act="new-session">+ Noter une séance</button>');
   return h;
 }
@@ -3689,7 +3815,7 @@ function openSportDaySheet(date){
   const occ=planOccurrences(date,date);
   let h='';
   if(ss.length) h+='<div class="list">'+ss.map(s=>'<div class="row" data-act="edit-session" data-id="'+s.id+'">'
-    +'<div class="row-ic">'+actEmoji(s.activityKey)+'</div><div class="row-main"><div class="row-title">'+esc(actLabel(s.activityKey))+'</div>'
+    +'<div class="row-ic row-ic--emoji">'+uem(actEmoji(s.activityKey))+'</div><div class="row-main"><div class="row-title">'+esc(actLabel(s.activityKey))+'</div>'
     +'<div class="row-sub"><span class="pill">'+fmtMin(s.durationMin)+'</span>'+(s.kcal?'<span class="pill">≈ '+nf(s.kcal,0)+' kcal</span>':'')+'</div></div>'+arrowHTML()+'</div>').join('')+'</div>';
   occ.filter(o=>o.status==='undecided').forEach(o=>{
     h+='<div class="card" style="margin-bottom:10px"><div class="row-title">Prévu : '+esc(o.label)+(o.time?' à '+esc(o.time):'')+'</div>'
@@ -3715,7 +3841,7 @@ function weeklyGoalSheet(){
 function sportPlanningView(){
   let h='';
   if(!state.settings.modules.planning){
-    h+='<div class="card"><div class="row-title">📅 Prévoir tes entraînements</div>'
+    h+='<div class="card"><div class="row-title flex aic gap8">'+ic('calendar','ic--sm')+'Prévoir tes entraînements</div>'
      +'<div class="small muted" style="margin:6px 0 12px">Note tes créneaux habituels (badminton le mardi à 20h, muscu lundi et jeudi…). Élan te les rappellera le jour venu, histoire de te préparer psychologiquement.</div>'
      +'<button class="btn btn--primary btn--block" data-act="mod-on" data-k="planning">Activer les prévisions</button></div>';
     return h;
@@ -3723,7 +3849,7 @@ function sportPlanningView(){
   const pend=pendingConfirm();
   if(pend.length){
     h+='<div class="section-title">À confirmer</div><div class="list">'
-     +pend.map(o=>'<div class="row"><div class="row-ic">'+o.emoji+'</div>'
+     +pend.map(o=>'<div class="row"><div class="row-ic row-ic--emoji">'+uem(o.emoji)+'</div>'
        +'<div class="row-main"><div class="row-title">'+esc(o.label)+'</div>'
        +'<div class="row-sub">'+esc(capit(fmtDayLabel(o.date)))+(o.time?' · '+esc(o.time):'')+'</div></div>'
        +'<div class="med-acts"><button class="chip chip--act is-active" data-act="plan-done" data-key="'+esc(o.key)+'">Fait</button>'
@@ -3740,7 +3866,7 @@ function sportPlanningView(){
     let curDate=null; h+='<div class="list">';
     shown.forEach(o=>{
       if(o.date!==curDate){ curDate=o.date; h+='<div class="day-head">'+esc(capit(fmtDayLabel(o.date)))+'</div>'; }
-      h+='<div class="row" data-act="edit-plan" data-id="'+o.planId+'"><div class="row-ic">'+o.emoji+'</div>'
+      h+='<div class="row" data-act="edit-plan" data-id="'+o.planId+'"><div class="row-ic row-ic--emoji">'+uem(o.emoji)+'</div>'
        +'<div class="row-main"><div class="row-title">'+esc(o.label)+'</div>'
        +'<div class="row-sub">'+(o.time?'<span class="pill">'+esc(o.time)+'</span>':'')
        +(o.durationMin?'<span class="pill">'+fmtMin(o.durationMin)+'</span>':'')
@@ -3752,10 +3878,10 @@ function sportPlanningView(){
   }
   h+='<div class="section-title">Mes créneaux</div>';
   const plans=(state.plans||[]).slice().sort((a,b)=>String(a.time).localeCompare(String(b.time)));
-  if(!plans.length) h+=empty('📅','Aucun créneau','Ajoute tes rendez-vous sportifs habituels pour qu’ils s’affichent le jour venu.',
+  if(!plans.length) h+=empty('calendar','Aucun créneau','Ajoute tes rendez-vous sportifs habituels pour qu’ils s’affichent le jour venu.',
     '<button class="btn btn--primary" data-act="new-plan">+ Ajouter un créneau</button>');
   else h+='<div class="list">'+plans.map(p=>'<div class="row" data-act="edit-plan" data-id="'+p.id+'">'
-    +'<div class="row-ic">'+actEmoji(p.activityKey)+'</div>'
+    +'<div class="row-ic row-ic--emoji">'+uem(actEmoji(p.activityKey))+'</div>'
     +'<div class="row-main"><div class="row-title">'+esc(p.label||actLabel(p.activityKey))+'</div>'
     +'<div class="row-sub">'+esc(planRecLabel(p))+' · '+esc(p.time||'')+(p.durationMin?' · '+fmtMin(p.durationMin):'')
     +(p.active===false?' <span class="badge badge--miss">en pause</span>':'')+'</div></div>'+arrowHTML()+'</div>').join('')+'</div>';
@@ -3798,7 +3924,7 @@ function planEditorBody(){
   const acts=activeActivities();
   let h=segHTML([['recurring','Récurrent'],['oneoff','Ponctuel']],PF.kind,'pf-kind','');
   h+='<div class="field" style="margin-top:12px"><label>Activité</label><div class="chip-row">'
-   +acts.map(a=>'<button class="chip'+(a.key===PF.activityKey?' is-active':'')+'" data-act="pf-act" data-key="'+a.key+'">'+a.emoji+' '+esc(a.label)+'</button>').join('')
+   +acts.map(a=>'<button class="chip'+(a.key===PF.activityKey?' is-active':'')+'" data-act="pf-act" data-key="'+a.key+'">'+uem(a.emoji)+' '+esc(a.label)+'</button>').join('')
    +'</div></div>';
   if(PF.kind==='recurring'){
     const names=['L','M','M','J','V','S','D'];
@@ -3858,14 +3984,14 @@ function sportActivitiesView(){
   h+='<div class="section-title">Actives</div><div class="list">'
    +on.map(a=>{ const u=used[a.key];
      return '<div class="row" data-act="edit-activity" data-key="'+a.key+'">'
-      +'<div class="row-ic" style="background:color-mix(in srgb,'+a.color+' 22%,var(--bg-3))">'+a.emoji+'</div>'
+      +'<div class="row-ic row-ic--emoji" style="background:color-mix(in srgb,'+a.color+' 20%,var(--bg-3))">'+uem(a.emoji)+'</div>'
       +'<div class="row-main"><div class="row-title">'+esc(a.label)+'</div>'
       +'<div class="row-sub"><span class="pill">'+(a.defaultDurationMin||45)+' min</span>'
       +'<span class="pill">MET '+nf(a.met,1)+'</span>'
       +(u?'<span>'+u.count+' '+plural(u.count,'séance')+' cette année</span>':'<span class="muted">jamais utilisée</span>')
       +'</div></div>'+arrowHTML()+'</div>'; }).join('')+'</div>';
   if(off.length) h+='<div class="section-title">Masquées</div><div class="chip-wrap">'
-   +off.map(a=>'<button class="chip chip--act" style="opacity:.5" data-act="edit-activity" data-key="'+a.key+'">'+a.emoji+' '+esc(a.label)+'</button>').join('')+'</div>';
+   +off.map(a=>'<button class="chip chip--act" style="opacity:.5" data-act="edit-activity" data-key="'+a.key+'">'+uem(a.emoji)+' '+esc(a.label)+'</button>').join('')+'</div>';
   h+='<button class="btn btn--ghost btn--block" data-act="new-activity" style="margin-top:12px">+ Créer une activité</button>';
   h+='<div class="hint" style="margin-top:12px">Masquer une activité la retire des listes de saisie, sans toucher aux séances déjà enregistrées.</div>';
   return h;
@@ -4256,7 +4382,7 @@ function pillSlotRow(slot,compact){
   else if(slot.kind==='group') sub=pillGroupSubtitle(slot);
   else sub=slot.whenLabel+' · '+slot.timeLabel;
   let h='<div class="'+cls+'" data-act="pill-open" data-key="'+esc(slot.key)+'">'
-    +'<div class="row-ic" style="background:color-mix(in srgb,'+(slot.product.color||'var(--acc)')+' 22%,var(--bg-3))">'+(slot.product.icon||'💊')+'</div>'
+    +'<div class="row-ic row-ic--emoji" style="background:color-mix(in srgb,'+(slot.product.color||'var(--acc)')+' 20%,var(--bg-3))">'+uem(slot.product.icon||'💊')+'</div>'
     +'<div class="row-main"><div class="row-title">'+esc(slot.product.name)
     +(slot.dose?' <span class="pill">'+esc(slot.dose)+'</span>':'')+'</div>'
     +'<div class="row-sub">'+sub
@@ -4264,12 +4390,12 @@ function pillSlotRow(slot,compact){
     +(slot.anyway?' <span class="badge badge--info">quand même</span>':'')
     +(slot.extra?' <span class="badge badge--info">en plus</span>':'')+'</div></div>';
   if(done||skip){
-    h+='<button class="pill-check '+(done?'ok':'no')+'" data-act="pill-undo" data-id="'+(slot.intake?slot.intake.id:'')+'">'+(done?'✓':'✕')+'</button>';
+    h+='<button class="pill-check '+(done?'ok':'no')+'" data-act="pill-undo" data-id="'+(slot.intake?slot.intake.id:'')+'">'+ic(done?'check':'close','ic--sm')+'</button>';
   } else {
     h+='<div class="pill-actions">'
-     +'<button class="pill-btn pill-btn--ok" data-act="pill-take" data-key="'+esc(slot.key)+'" aria-label="Pris">✓</button>'
+     +'<button class="pill-btn pill-btn--ok" data-act="pill-take" data-key="'+esc(slot.key)+'" aria-label="Pris">'+ic('check','ic--sm')+'</button>'
      +(compact?'':'<button class="pill-btn" data-act="pill-later" data-key="'+esc(slot.key)+'" aria-label="Plus tard">⏳</button>')
-     +'<button class="pill-btn pill-btn--no" data-act="pill-skip" data-key="'+esc(slot.key)+'" aria-label="Pas aujourd’hui">✕</button>'
+     +'<button class="pill-btn pill-btn--no" data-act="pill-skip" data-key="'+esc(slot.key)+'" aria-label="Pas aujourd’hui">'+ic('close','ic--sm')+'</button>'
      +'</div>';
   }
   return h+'</div>';
@@ -4284,7 +4410,7 @@ function pillGroupSubtitle(slot){
 function screenPillbox(){
   if(!state.settings.modules.pillbox){
     return backHead('Pilulier','/plus')
-      +'<div class="card"><div class="row-title">💊 Pilulier</div>'
+      +'<div class="card"><div class="row-title flex aic gap8">'+ic('pill','ic--sm')+'Pilulier</div>'
       +'<div class="small muted" style="margin:6px 0 12px">Médicaments, compléments, protéine… avec des prises fixes (matin, midi, soir) ou relatives : « 30 min après le déjeuner », « 15 min après la séance ». Rappel à l’ouverture de l’app.</div>'
       +'<button class="btn btn--primary btn--block" data-act="mod-on" data-k="pillbox">Activer le pilulier</button></div>';
   }
@@ -4301,7 +4427,7 @@ function screenPillbox(){
 }
 function pillDayView(date){
   if(!(state.meds||[]).length)
-    return empty('💊','Ton pilulier est vide','Ajoute tes médicaments, compléments ou ta protéine, puis dis-nous quand tu les prends.',
+    return empty('pill','Ton pilulier est vide','Ajoute tes médicaments, compléments ou ta protéine, puis dis-nous quand tu les prends.',
       '<button class="btn btn--primary" data-act="pill-new-product">+ Ajouter un produit</button>');
   const box=pillboxForDate(date); PILL_BOX=box;
   const isToday=date===pillToday();
@@ -4323,11 +4449,11 @@ function pillDayView(date){
   h+='<div class="card"><div class="flex between aic"><div class="row-title">Pilulier du jour</div>'
    +'<div class="tnum muted">'+box.counts.taken+'/'+box.counts.expected+'</div></div>'
    +'<div class="bar" style="margin-top:10px"><span class="bar-seg" data-bar="'+pct.toFixed(3)+'" style="background:var(--grad-brand)"></span></div>'
-   +(box.wctx.any?'<div class="small muted" style="margin-top:8px">🏋️ '+esc(box.wctx.label||'Séance')
+   +(box.wctx.any?'<div class="small muted" style="margin-top:8px">'+esc(box.wctx.label||'Séance')
       +(box.wctx.startTime?' vers '+esc(box.wctx.startTime):'')+'</div>':'')
    +'</div>';
   if(box.counts.expected>0&&box.counts.pending===0&&box.counts.skipped===0){
-    h+='<div class="card center" style="padding:20px;margin-top:12px"><div style="font-size:34px">🎉</div>'
+    h+='<div class="card center" style="padding:22px;margin-top:12px"><div class="ob-mark" style="color:var(--acc-2)">'+ic('sparkle','ic--xl')+'</div>'
      +'<div style="font-weight:700;margin-top:6px">Pilulier complet</div>'
      +'<div class="small muted">'+box.counts.taken+' '+plural(box.counts.taken,'prise')+' sur '+box.counts.expected
      +(pillStreak()>1?' · série de '+pillStreak()+' jours':'')+'</div></div>';
@@ -4344,11 +4470,11 @@ function pillDayView(date){
   if(box.onDemand.length){
     h+='<div class="section-title">Au besoin</div><div class="list">'
      +box.onDemand.map(s=>'<div class="row pill-slot'+(s.status==='taken'?' is-done':'')+'">'
-       +'<div class="row-ic">'+(s.product.icon||'💊')+'</div>'
+       +'<div class="row-ic row-ic--emoji">'+uem(s.product.icon||'💊')+'</div>'
        +'<div class="row-main"><div class="row-title">'+esc(s.product.name)+'</div>'
        +'<div class="row-sub">'+(s.status==='taken'?'Pris'+(s.intake&&s.intake.at?' à '+s.intake.at:''):esc(s.dose||'Au besoin'))+'</div></div>'
        +(s.status==='taken'
-         ?'<button class="pill-check ok" data-act="pill-undo" data-id="'+s.intake.id+'">✓</button>'
+         ?'<button class="pill-check ok" data-act="pill-undo" data-id="'+s.intake.id+'">'+ic('check','ic--sm')+'</button>'
          :'<button class="chip chip--act" data-act="pill-take" data-key="'+esc(s.key)+'">+ J’en ai pris</button>')+'</div>').join('')
      +'</div>';
   }
@@ -4358,7 +4484,7 @@ function pillDayView(date){
         ?'Pas de séance prévue aujourd’hui — ces prises ne te sont pas rappelées.'
         :'Le module Sport est désactivé : Élan ne sait pas quand tu t’entraînes, donc ces prises ne te sont pas rappelées.')+'</div>'
      +box.notApplicable.map(s=>'<div class="row pill-slot is-na">'
-       +'<div class="row-ic">'+(s.product.icon||'💊')+'</div>'
+       +'<div class="row-ic row-ic--emoji">'+uem(s.product.icon||'💊')+'</div>'
        +'<div class="row-main"><div class="row-title">'+esc(s.product.name)+'</div>'
        +'<div class="row-sub">'+esc(s.whenLabel)+'</div></div>'
        +'<button class="btn btn--ghost" data-act="pill-anyway" data-key="'+esc(s.key)+'" style="padding:8px 10px;font-size:12.5px;flex:none">J’en ai pris quand même</button></div>').join('')
@@ -4389,7 +4515,7 @@ function pillWeekView(){
    +['L','M','M','J','V','S','D'].map(d=>'<div class="cal-dow">'+d+'</div>').join('')+'</div>';
   keys.forEach(k=>{
     const r=rows[k];
-    h+='<div class="pill-week" style="margin-top:4px"><div class="pill-week-name">'+(r.product.icon||'💊')+' '+esc(r.product.name)+'</div>';
+    h+='<div class="pill-week" style="margin-top:4px"><div class="pill-week-name">'+uem(r.product.icon||'💊')+esc(r.product.name)+'</div>';
     days.forEach(d=>{
       const s=r.cells[d];
       let cls='pw-future', sym='○';
@@ -4417,13 +4543,13 @@ function pillWeekView(){
 function pillProductsView(){
   const on=(state.meds||[]).filter(m=>m.active&&!m.archived);
   const off=(state.meds||[]).filter(m=>!m.active&&!m.archived);
-  if(!on.length&&!off.length) return empty('💊','Aucun produit','Ajoute ton premier produit pour commencer.',
+  if(!on.length&&!off.length) return empty('pill','Aucun produit','Ajoute ton premier produit pour commencer.',
     '<button class="btn btn--primary" data-act="pill-new-product">+ Ajouter un produit</button>');
   const card=m=>{
     const scs=(state.medSchedules||[]).filter(s=>s.productId===m.id&&s.active);
     const st=pillProductStats(m.id,30);
     return '<div class="row" data-act="go" data-route="/produit/'+m.id+'">'
-      +'<div class="row-ic" style="background:color-mix(in srgb,'+(m.color||'var(--acc)')+' 22%,var(--bg-3))">'+(m.icon||'💊')+'</div>'
+      +'<div class="row-ic row-ic--emoji" style="background:color-mix(in srgb,'+(m.color||'var(--acc)')+' 20%,var(--bg-3))">'+uem(m.icon||'💊')+'</div>'
       +'<div class="row-main"><div class="row-title">'+esc(m.name)+'</div>'
       +'<div class="row-sub">'+(m.dose?'<span class="pill">'+esc(m.dose)+'</span>':'')
       +'<span>'+esc(scs.map(s=>pillWhenLabel(s).toLowerCase()).join(' ou ')||'aucun créneau')+'</span></div></div>'
@@ -4465,7 +4591,7 @@ function pillStatsView(){
     const jours=rows.length?Math.max.apply(null,rows.map(r=>r.st.expected)):0;
     h+='<div class="section-title">Par produit</div><div class="card"><div class="chart-bars">'
      +rows.map(r=>'<div><div class="cbtop"><span class="grow" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
-       +(r.m.icon||'💊')+' '+esc(r.m.name)+'</span>'
+       +uem(r.m.icon||'💊')+' '+esc(r.m.name)+'</span>'
        +'<span class="tnum muted nowrap">'+r.st.taken+'/'+r.st.expected+' · '+(r.st.pct!=null?r.st.pct+' %':'—')
        +(r.st.avgTimeMin!=null?' · '+minToHHMM(r.st.avgTimeMin):'')+'</span></div>'
        +'<div class="chart-bar-track"><div class="chart-bar-fill" data-bar="'+((r.st.pct||0)/100).toFixed(2)+'" style="background:'+(r.m.color||'var(--acc)')+'"></div></div></div>').join('')
@@ -4488,7 +4614,7 @@ function pillStatsView(){
        +'<div class="chart-bar-track"><div class="chart-bar-fill" data-bar="'+(r.pct/100).toFixed(2)+'" style="background:var(--acc)"></div></div></div>').join('')
      +'</div>';
   });
-  h+='<button class="btn btn--ghost btn--block" data-act="pill-ics-all" style="margin-top:14px">📆 Exporter mes créneaux vers le calendrier</button>'
+  h+='<button class="btn btn--ghost btn--block" data-act="pill-ics-all" style="margin-top:14px">'+ic('calendar')+'Exporter mes créneaux vers le calendrier</button>'
    +'<div class="hint" style="margin-top:8px">iPhone n’autorise pas une application web à envoyer des notifications programmées. Élan te rappelle tes prises à chaque ouverture. Pour une vraie alarme, exporte tes créneaux vers ton Calendrier — l’alerte viendra alors d’iOS.</div>';
   return h;
 }
@@ -4504,17 +4630,17 @@ function pillGroupSplit(groupId,days){
 function screenMedDetail(id){
   if(!state.settings.modules.pillbox)
     return backHead('Produit','/plus')
-      +'<div class="card"><div class="row-title">💊 Pilulier désactivé</div>'
+      +'<div class="card"><div class="row-title flex aic gap8">'+ic('pill','ic--sm')+'Pilulier désactivé</div>'
       +'<div class="small muted" style="margin:6px 0 12px">Active le pilulier pour revoir ce produit. Rien n’a été supprimé.</div>'
       +'<button class="btn btn--primary btn--block" data-act="mod-on" data-k="pillbox">Activer le pilulier</button></div>';
   const m=medById(id);
-  if(!m) return backHead('Produit','/pilulier')+empty('💊','Produit introuvable','Il a peut-être été supprimé.',
+  if(!m) return backHead('Produit','/pilulier')+empty('pill','Produit introuvable','Il a peut-être été supprimé.',
     '<button class="btn btn--primary" data-act="go" data-route="/pilulier">Revenir au pilulier</button>');
   const scs=(state.medSchedules||[]).filter(s=>s.productId===id);
   const groups=(state.medGroups||[]).filter(g=>g.productId===id);
   const st=pillProductStats(id,30);
-  let h=backHead(m.name,'/pilulier','<button class="btn-add" data-act="pill-edit-product" data-id="'+id+'">✏️ Modifier</button>');
-  h+='<div class="card"><div class="today-top"><div class="today-ic" style="background:color-mix(in srgb,'+(m.color||'var(--acc)')+' 22%,var(--bg-3))">'+(m.icon||'💊')+'</div>'
+  let h=backHead(m.name,'/pilulier','<button class="btn-add" data-act="pill-edit-product" data-id="'+id+'">Modifier</button>');
+  h+='<div class="card"><div class="today-top"><div class="today-ic today-ic--emoji" style="background:color-mix(in srgb,'+(m.color||'var(--acc)')+' 20%,var(--bg-3))">'+uem(m.icon||'💊')+'</div>'
    +'<div class="row-main"><div class="row-title">'+esc(m.name)+'</div>'
    +'<div class="small muted">'+esc(medKindLabel(m.kind))+(m.dose?' · '+esc(m.dose):'')+'</div>'
    +'<div class="small muted">'+(m.endDate?('Du '+fmtDateShort(m.startDate)+' au '+fmtDateShort(m.endDate)):('Depuis le '+fmtDateShort(m.startDate)))+'</div></div></div>'
@@ -4533,11 +4659,11 @@ function screenMedDetail(id){
   });
   const solo=scs.filter(s=>!s.groupId);
   if(solo.length) h+='<div class="list">'+solo.map(s=>'<div class="row" data-act="pill-edit-sched" data-id="'+s.id+'">'
-    +'<div class="row-ic">🕐</div><div class="row-main"><div class="row-title">'+esc(pillWhenLabel(s))+'</div>'
+    +'<div class="row-ic">'+ic('clock')+'</div><div class="row-main"><div class="row-title">'+esc(pillWhenLabel(s))+'</div>'
     +'<div class="row-sub">'+esc(pillRecLabel(s))+(s.active?'':' <span class="badge badge--miss">inactif</span>')+'</div></div>'+arrowHTML()+'</div>').join('')+'</div>';
   if(!scs.length) h+='<div class="card"><div class="small muted">Aucun créneau. Dis-nous quand tu prends ce produit.</div></div>';
   h+='<button class="btn btn--ghost btn--block" data-act="pill-new-sched" data-pid="'+id+'" style="margin-top:10px">+ Ajouter un créneau</button>';
-  if(solo.length>=2) h+='<button class="btn btn--ghost btn--block" data-act="pill-group-new" data-pid="'+id+'" style="margin-top:8px">↔️ Créer un groupe d’alternatives</button>';
+  if(solo.length>=2) h+='<button class="btn btn--ghost btn--block" data-act="pill-group-new" data-pid="'+id+'" style="margin-top:8px">'+ic('shuffle')+'Créer un groupe d’alternatives</button>';
   h+='<div class="section-title">Statistiques</div><div class="stats stats-2">'
    +statCard('Observance 30 j',st.pct!=null?st.pct+' %':'—',st.taken+'/'+st.expected,'')
    +statCard('Heure moyenne',st.avgTimeMin!=null?minToHHMM(st.avgTimeMin):'—','','')
@@ -4545,7 +4671,8 @@ function screenMedDetail(id){
   const hist=(state.medIntakes||[]).filter(i=>i.productId===id).sort((a,b)=>a.date<b.date?1:-1).slice(0,30);
   if(hist.length){
     h+='<div class="section-title">Historique</div><div class="list">'
-     +hist.map(i=>'<div class="row"><div class="row-ic">'+(i.status==='taken'?'✓':(i.status==='skipped'?'✕':'⏳'))+'</div>'
+     +hist.map(i=>'<div class="row"><div class="row-ic" style="color:'+(i.status==='taken'?'var(--pos)':'var(--tx-3)')+'">'
+     +ic(i.status==='taken'?'check':(i.status==='skipped'?'close':'hourglass'))+'</div>'
        +'<div class="row-main"><div class="row-title">'+esc(capit(fmtDayLabel(i.date)))+'</div>'
        +'<div class="row-sub">'+(i.at?i.at+' · ':'')+esc(i.qty||'')+(i.offPlan?' <span class="badge badge--info">hors plan</span>':'')+'</div></div>'
        +'<button class="btn-add" data-act="pill-undo" data-id="'+i.id+'">Annuler</button></div>').join('')
@@ -4766,10 +4893,10 @@ function pillTakeSheet(slot){
    +'<div class="field"><label>Quantité</label><input class="input" id="tkQty" value="'+esc(slot.dose||'')+'"></div></div>'
    +'<div class="field"><label>Note</label><textarea class="input" id="tkNote" placeholder="Facultatif"></textarea></div>'
    +'<div class="sheet-foot">'
-   +'<button class="btn btn--primary btn--block" data-act="pill-confirm-take">✓ J’ai pris</button>'
+   +'<button class="btn btn--primary btn--block" data-act="pill-confirm-take">'+ic('check')+'J’ai pris</button>'
    +'<div class="btn-row" style="margin-top:8px">'
    +'<button class="btn btn--ghost" data-act="pill-later-menu">⏳ Plus tard</button>'
-   +'<button class="btn btn--ghost" data-act="pill-skip" data-key="'+esc(slot.key)+'">✕ Pas aujourd’hui</button></div>'
+   +'<button class="btn btn--ghost" data-act="pill-skip" data-key="'+esc(slot.key)+'">'+ic('close')+'Pas ce jour</button></div>'
    +(slot.scheduleId?'<button class="btn-add" data-act="pill-edit-sched" data-id="'+slot.scheduleId+'" style="margin-top:8px">Modifier ce créneau ›</button>':'')
    +'</div>';
   openSheet(slot.product.name,h);
@@ -4849,32 +4976,38 @@ function pillLateToday(){
 /* ---------- Écran : Plus ---------- */
 function screenPlus(){
   const m=state.settings.modules;
+  /* Quatre familles, dans l'ordre où on s'en sert : comprendre, agir, garder, régler.
+     Les couleurs viennent des mesures qu'elles servent — jamais posées au hasard. */
   const items=[
-    ['/objectif','🎯','Mon objectif','poids cible, date estimée'],
-    ['/analyse','🔬','Analyse','comprendre mon corps'],
-    ['/simulateur','🧮','Simulateur','où j’en serai, et quand'],
-    ['/astuces','🧰','Boîte à outils','repères et astuces'],
-    ['/paliers','🏅','Paliers','ce que j’ai déjà franchi'],
-    ['/motivations','💭','Mes raisons','pourquoi je fais ça']
+    ['/objectif','target','Mon objectif','poids cible, date estimée','var(--m-goal)'],
+    ['/semaine','calendar','Ma semaine','le bilan des sept derniers jours','var(--acc)'],
+    ['/analyse','microscope','Analyse','comprendre mon corps','var(--m-eau)'],
+    ['/simulateur','calculator','Simulateur','où j’en serai, et quand','var(--m-imc)'],
+    ['/astuces','toolbox','Boîte à outils','repères et astuces','var(--m-cal)'],
+    ['/mensurations','ruler','Mensurations','ce que la balance ne dit pas','var(--m-gras)'],
+    ['/paliers','medal','Paliers','ce que j’ai déjà franchi','var(--gold)'],
+    ['/motivations','quote','Mes raisons','pourquoi je fais ça','var(--m-muscle)']
   ];
-  if(m.sport){ items.push(['/sport','🏃','Sport','séances et régularité']); items.push(['/planning','📅','Planning','ce que j’ai prévu']); }
-  if(m.kcalIn) items.push(['/calories','🍽️','Calories','ce que je mange']);
-  if(m.pillbox) items.push(['/pilulier','💊','Pilulier','médicaments et compléments']);
-  items.push(['/tableau','📋','Tableau','tous mes chiffres']);
-  items.push(['/sauvegarde','💾','Sauvegarde','ne rien perdre']);
-  items.push(['/metriques','📐','Mes mesures','que saisir chaque matin']);
-  items.push(['/reglages','⚙️','Réglages','profil, modules, thème']);
-  items.push(['/aide','❓','Aide','comment ça marche']);
+  if(m.sport){ items.push(['/sport','run','Sport','séances et régularité','var(--m-sport)']);
+               items.push(['/planning','calendar','Planning','ce que j’ai prévu','var(--m-sport)']); }
+  if(m.kcalIn) items.push(['/calories','plate','Calories','ce que je mange','var(--m-cal)']);
+  if(m.pillbox) items.push(['/pilulier','pill','Pilulier','médicaments et compléments','var(--m-muscle)']);
+  items.push(['/tableau','table','Tableau','tous mes chiffres','var(--tx-2)']);
+  items.push(['/sauvegarde','save','Sauvegarde','ne rien perdre','var(--acc)']);
+  items.push(['/metriques','layers','Mes mesures','que saisir chaque matin','var(--tx-2)']);
+  items.push(['/reglages','settings','Réglages','profil, modules, thème','var(--tx-2)']);
+  items.push(['/aide','help','Aide','comment ça marche','var(--tx-2)']);
   let h=head('Plus');
-  h+='<div class="hub">'+items.map(i=>'<a class="hub-item" href="#'+i[0]+'"><div class="hub-ic">'+i[1]+'</div>'
-    +'<div><div class="hub-label">'+esc(i[2])+'</div><div class="hub-sub">'+esc(i[3])+'</div></div></a>').join('')+'</div>';
+  h+='<div class="hub">'+items.map(i=>'<a class="hub-item" href="#'+i[0]+'">'
+    +'<div class="hub-ic" style="color:'+i[4]+'">'+ic(i[1])+'</div>'
+    +'<div class="hub-txt"><div class="hub-label">'+esc(i[2])+'</div><div class="hub-sub">'+esc(i[3])+'</div></div></a>').join('')+'</div>';
   const off=[];
-  if(!m.sport) off.push(['sport','🏃','Sport & entraînements','noter tes séances, voir tes minutes, prévoir tes créneaux']);
-  if(!m.kcalIn) off.push(['kcalIn','🍽️','Calories mangées','suivre ce que tu manges et comprendre le décalage avec le poids']);
-  if(!m.pillbox) off.push(['pillbox','💊','Pilulier','médicaments, compléments, protéine — avec rappel du jour']);
+  if(!m.sport) off.push(['sport','run','Sport & entraînements','noter tes séances, voir tes minutes, prévoir tes créneaux']);
+  if(!m.kcalIn) off.push(['kcalIn','plate','Calories mangées','suivre ce que tu manges et comprendre le décalage avec le poids']);
+  if(!m.pillbox) off.push(['pillbox','pill','Pilulier','médicaments, compléments, protéine — avec rappel du jour']);
   if(off.length){
     h+='<div class="section-title">Modules à activer</div><div class="list">'
-     +off.map(o=>'<div class="row"><div class="row-ic">'+o[1]+'</div>'
+     +off.map(o=>'<div class="row"><div class="row-ic">'+ic(o[1])+'</div>'
        +'<div class="row-main"><div class="row-title">'+esc(o[2])+'</div><div class="row-sub">'+esc(o[3])+'</div></div>'
        +'<button class="chip chip--act" data-act="mod-on" data-k="'+o[0]+'">Activer</button></div>').join('')+'</div>';
   }
@@ -4908,18 +5041,18 @@ function screenObjectif(){
     if(need!=null){
       const refK=refWeight().kg||100;
       const pctWeek=need/refK*100;
-      h+='<div class="insight'+(pctWeek>1?'':' insight--neutral')+'" style="margin-top:12px"><div class="insight-ic">📆</div><div class="insight-txt">'
+      h+='<div class="insight'+(pctWeek>1?'':' insight--neutral')+'" style="margin-top:12px"><div class="insight-ic">'+ic('calendar')+'</div><div class="insight-txt">'
        +'Ta date cible (le '+esc(fmtDateShort(g.date))+', dans '+days+' jours) demande <strong>'+fmtKg(need)+' par semaine</strong>, soit '+nf(pctWeek,1)+' % de ton poids.'
        +(pctWeek>1?' C’est plus rapide que ce qui tient dans la durée — la date est peut-être à décaler.':' C’est un rythme tenable.')
        +'</div></div>';
     }
   }
   const nb=trendNow()!=null?nextBmiThreshold(trendNow()):null;
-  if(nb) h+='<div class="card" style="margin-top:12px"><div class="row-title">📉 Prochain seuil d’IMC</div>'
+  if(nb) h+='<div class="card" style="margin-top:12px"><div class="row-title flex aic gap8">'+ic('gauge','ic--sm')+'Prochain seuil d’IMC</div>'
    +'<div class="small muted" style="margin-top:4px">Sous '+fmtKg(nb.kg)+', ton IMC passe sous '+nb.bmi+'. Il te reste '+fmtKg(nb.remainKg)+'.</div></div>';
   h+='<div class="section-title">Paliers</div>';
   const nm=nextMilestone();
-  if(nm) h+='<div class="card"><div class="today-top"><div class="today-ic">'+nm.def.emoji+'</div>'
+  if(nm) h+='<div class="card"><div class="today-top"><div class="today-ic is-acc">'+ic(nm.def.icon)+'</div>'
    +'<div class="row-main"><div class="stat-label">Prochain palier</div><div class="row-title">'+esc(nm.def.label)+'</div>'
    +'<div class="small muted">'+esc(nm.remainText)+'</div></div></div>'
    +'<div class="bar" style="margin-top:10px"><span class="bar-seg" data-bar="'+nm.pct.toFixed(3)+'" style="background:var(--grad-brand)"></span></div></div>';
@@ -4948,7 +5081,7 @@ function saveGoal(){
   state.settings.goal.weightKg=Math.round(w*10)/10;
   state.settings.goal.date=g('gDate')||null;
   const f=parseNum(g('gFat')); state.settings.goal.fatPct=(f!=null&&f>3&&f<70)?f:null;
-  closeSheet(); update(); toast('Objectif enregistré 🎯');
+  closeSheet(); update(); toast('Objectif enregistré');
   setTimeout(()=>checkMilestones({celebrate:true}),300);
 }
 
@@ -4957,14 +5090,14 @@ function screenPaliers(){
   const done=(state.milestones||[]).filter(m=>defByCode(m.code)).sort((a,b)=>a.reachedAt<b.reachedAt?1:-1);
   let h=backHead('Paliers','/plus');
   const nm=nextMilestone();
-  if(nm) h+='<div class="card card--accent"><div class="today-top"><div class="today-ic">'+nm.def.emoji+'</div>'
+  if(nm) h+='<div class="card card--accent"><div class="today-top"><div class="today-ic is-acc">'+ic(nm.def.icon)+'</div>'
    +'<div class="row-main"><div class="stat-label">Prochain palier</div><div class="row-title">'+esc(nm.def.label)+'</div>'
    +'<div class="small muted">'+esc(nm.remainText)+'</div></div></div>'
    +'<div class="bar" style="margin-top:10px"><span class="bar-seg" data-bar="'+nm.pct.toFixed(3)+'" style="background:var(--grad-brand)"></span></div></div>';
-  if(!done.length) return h+empty('🏅','Aucun palier franchi pour l’instant','Ils arriveront. Le premier est souvent le plus beau.');
+  if(!done.length) return h+empty('medal','Aucun palier franchi pour l’instant','Ils arriveront. Le premier est souvent le plus beau.');
   h+='<div class="section-title">'+done.length+' '+plural(done.length,'palier')+' '+plural(done.length,'franchi')+'</div><div class="list">'
    +done.map(m=>{ const d=defByCode(m.code);
-     return '<div class="row"><div class="row-ic">'+d.emoji+'</div>'
+     return '<div class="row"><div class="row-ic" style="color:var(--gold)">'+ic(d.icon)+'</div>'
       +'<div class="row-main"><div class="row-title">'+esc(d.label)+'</div>'
       +'<div class="row-sub">le '+esc(fmtDateLong(m.reachedAt))+'</div></div></div>'; }).join('')
    +'</div>';
@@ -4975,10 +5108,10 @@ function screenPaliers(){
 function screenMotivations(){
   const l=state.motivations||[];
   let h=backHead('Mes raisons','/plus','<button class="btn-add" data-act="add-motivation">+ Ajouter</button>');
-  if(!l.length) return h+empty('💭','Aucune raison écrite pour l’instant','Une phrase suffit. Elle reviendra te voir les matins où la balance ne bouge pas.',
+  if(!l.length) return h+empty('quote','Aucune raison écrite pour l’instant','Une phrase suffit. Elle reviendra te voir les matins où la balance ne bouge pas.',
     '<button class="btn btn--primary" data-act="add-motivation">Écrire ma raison</button>');
   h+='<div class="list">'+l.map(m=>'<div class="row" data-act="edit-motivation" data-id="'+m.id+'">'
-    +'<div class="row-ic">'+(m.emoji||'💭')+'</div>'
+    +'<div class="row-ic row-ic--emoji">'+uem(m.emoji||'💭')+'</div>'
     +'<div class="row-main"><div class="row-title" style="white-space:normal">'+esc(m.text)+'</div></div>'+arrowHTML()+'</div>').join('')+'</div>';
   h+='<div class="hint" style="margin-top:12px">Une raison est affichée chaque matin sur l’accueil, à tour de rôle.</div>';
   return h;
@@ -4988,7 +5121,7 @@ function motivationEditor(id){
   const m=id?(state.motivations||[]).find(x=>x.id===id):null;
   openSheet(m?'Modifier ma raison':'Pourquoi tu fais ça ?',
     '<div class="field"><textarea class="input" id="mvText" style="min-height:90px" placeholder="Ex. : « Monter les escaliers sans souffler », « Rentrer dans ma veste préférée », « Tenir tout un match de badminton »">'+esc(m?m.text:'')+'</textarea></div>'
-    +'<div class="chip-wrap">'+MOTIV_EMOJI.map(e=>'<button class="chip'+((m?m.emoji:'💭')===e?' is-active':'')+'" data-act="mv-emoji" data-emoji="'+e+'">'+e+'</button>').join('')+'</div>'
+    +'<div class="chip-wrap">'+MOTIV_EMOJI.map(e=>'<button class="chip'+((m?m.emoji:'💭')===e?' is-active':'')+'" data-act="mv-emoji" data-emoji="'+e+'">'+uem(e)+'</button>').join('')+'</div>'
     +'<div class="sheet-foot"><button class="btn btn--primary btn--block" data-act="save-motivation" data-id="'+(id||'')+'">Enregistrer</button>'
     +(id?'<button class="btn btn--danger btn--block" data-act="del-motivation" data-id="'+id+'" style="margin-top:8px">Supprimer</button>':'')
     +'</div>');
@@ -4999,10 +5132,10 @@ function screenAnalyse(){
   let h=backHead('Analyse','/plus');
   const nW=weighIns().length;
   if(nW<4){
-    return h+empty('🔬','Pas encore de quoi analyser',
+    return h+empty('microscope','Pas encore de quoi analyser',
       nW===0?'Cet écran croise ton poids, ta composition, ton sport et ce que tu manges. Il lui faut d’abord quelques matins de pesée.'
             :'Encore '+(4-nW)+' '+plural(4-nW,'pesée')+' et je commence à croiser tes chiffres. Rien ne presse : une par matin suffit.',
-      '<button class="btn btn--primary" data-act="weigh-in">⚖️ Saisir ma pesée</button>');
+      '<button class="btn btn--primary" data-act="weigh-in">'+ic('scale')+'Saisir ma pesée</button>');
   }
   const cov=coverage(30);
   if(cov<0.40){ const n30=windowOf(serieW(),isoToday(),30).length;
@@ -5012,7 +5145,7 @@ function screenAnalyse(){
   if(list.length){
     h+='<div class="section-title">Ce que disent tes chiffres</div>';
     h+=list.slice(0,10).map(i=>'<div class="insight'+(i.tone==='pos'?'':' insight--neutral')+'" style="margin-bottom:10px">'
-      +'<div class="insight-ic">'+(i.emoji||'💡')+'</div><div class="insight-txt">'+esc(i.text)+'</div></div>').join('');
+      +'<div class="insight-ic">'+ic(i.icon||'bulb')+'</div><div class="insight-txt">'+esc(i.text)+'</div></div>').join('');
   }
   /* Composition : la vraie réponse à « le % ne veut pas dire grand-chose ». */
   const dw=compDelta(PICK_W,28), df=metricOn('fat')?compDelta(PICK_FATK,28):{ok:false}, dp=compDelta(PICK_FATP,28);
@@ -5045,7 +5178,7 @@ function screenAnalyse(){
      +'<div class="hero-value tnum" style="font-size:34px;margin:2px 0 0"><span data-count="'+maint.kcal+'" data-dec="0">'+nf(maint.kcal,0)+'</span><span class="hero-unit">kcal/j</span></div></div>'
      +(maint.source==='observé'?'<span class="badge badge--ok">mesuré sur toi</span>':'<span class="badge">estimé</span>')+'</div>'
      +'<div class="small muted" style="margin-top:8px">C’est le nombre de calories où ton poids ne bouge ni dans un sens ni dans l’autre. En dessous, tu perds ; au-dessus, tu prends. '+esc(capit(maint.why))+'.</div>'
-     +'<div class="btn btn--ghost btn--block" style="margin-top:12px">🧮 Ouvrir le simulateur ›</div></div>';
+     +'<div class="btn btn--ghost btn--block" style="margin-top:12px">'+ic('calculator')+'Ouvrir le simulateur</div></div>';
   }
   h+='<div class="card" style="margin-top:12px"><div class="row-title">D’où vient ce chiffre</div>'
    +'<div class="calc-list" style="margin-top:10px">'
@@ -5094,13 +5227,415 @@ function screenAnalyse(){
   } else h+='<div class="card"><div class="small muted">Pas encore assez de pesées réparties sur la semaine ('+wd.n+').</div></div>';
 
   const sg=noiseSigma();
-  h+='<div class="card" style="margin-top:12px"><div class="row-title">📏 Ton bruit naturel</div>'
+  h+='<div class="card" style="margin-top:12px"><div class="row-title flex aic gap8">'+ic('ruler','ic--sm')+'Ton bruit naturel</div>'
    +'<div class="small muted" style="margin-top:4px">Ton poids bouge naturellement de ±'+fmtKg(sg.sigma)+' d’un jour à l’autre'
    +(sg.estimated?' (mesuré sur tes '+sg.n+' dernières pesées)':' (estimation par défaut)')
    +'. En dessous de cet écart, ce n’est pas un vrai changement.</div></div>';
-  h+='<button class="btn btn--ghost btn--block" data-act="go" data-route="/astuces" style="margin-top:14px">🧰 Ma boîte à outils</button>';
+  h+='<button class="btn btn--ghost btn--block" data-act="go" data-route="/astuces" style="margin-top:14px">'+ic('toolbox')+'Ma boîte à outils</button>';
   h+='<div class="hint" style="margin-top:12px">Élan décrit tes chiffres. Pour toute question de santé, parles-en à un professionnel.</div>';
   return h;
+}
+
+/* ============================================================
+   ÉCRAN : MENSURATIONS
+   ------------------------------------------------------------
+   Ce que la balance ne peut pas dire. Quand on remplace du gras
+   par du muscle, le poids ne bouge pas — le tour de taille, si.
+   C'est aussi la mesure qui suit le mieux la graisse du ventre,
+   celle qui compte vraiment pour la santé.
+
+   Le repère central est le RAPPORT TOUR DE TAILLE / HAUTEUR
+   (WHtR) : « garde ton tour de taille sous la moitié de ta
+   taille ». Il vaut mieux que l'IMC parce qu'il ne confond pas
+   un corps musclé avec un corps gras, et il marche à toutes les
+   morphologies.
+
+   Ton : un repère, jamais un verdict. Rien n'est rouge, aucun
+   conseil médical, et la taille d'échantillon est toujours dite.
+   ============================================================ */
+const TAPE_KEYS=['waist','hips','chest','arm','thigh','neck'];
+/* Seuils de tour de taille (repères usuels européens, hommes / femmes). */
+const WAIST_MARKS={m:[94,102], f:[80,88]};
+/* Rapport taille/hauteur — quatre zones, décrites sans dramatiser. */
+function whtrZone(v){
+  if(v==null) return null;
+  if(v<0.40) return {code:'bas',   label:'sous la zone habituelle', cls:'flat'};
+  if(v<0.50) return {code:'ok',    label:'dans la zone saine',      cls:'down'};
+  if(v<0.60) return {code:'haut',  label:'au-dessus du repère',     cls:'flat'};
+  return             {code:'thaut', label:'nettement au-dessus',    cls:'flat'};
+}
+function whtrNow(){
+  const cm=state.settings.profile.heightCm;
+  const e=lastWithMetric('waist');
+  if(!cm||!e) return null;
+  const w=mv(e,'waist');
+  if(w==null) return null;
+  return {v:Math.round(w/cm*1000)/1000, waist:w, date:e.date, heightCm:cm};
+}
+/* La dernière pesée qui porte cette mesure — les mensurations sont prises
+   toutes les deux ou trois semaines, pas tous les matins. */
+function lastWithMetric(k){
+  for(let i=state.entries.length-1;i>=0;i--){ if(mv(state.entries[i],k)!=null) return state.entries[i]; }
+  return null;
+}
+function firstWithMetric(k){
+  for(let i=0;i<state.entries.length;i++){ if(mv(state.entries[i],k)!=null) return state.entries[i]; }
+  return null;
+}
+function tapeStats(k){
+  const a=firstWithMetric(k), b=lastWithMetric(k);
+  if(!b) return null;
+  const va=a?mv(a,k):null, vb=mv(b,k);
+  const n=state.entries.filter(e=>mv(e,k)!=null).length;
+  return {key:k,first:a,last:b,v:vb,delta:(a&&a!==b&&va!=null)?Math.round((vb-va)*10)/10:null,
+          since:a?a.date:null,date:b.date,n:n};
+}
+function screenMensurations(){
+  const on=TAPE_KEYS.filter(metricOn);
+  let h=backHead('Mensurations','/plus',
+    on.length?'<button class="btn-add" data-act="meas-add">'+ic('plus','ic--sm')+'Noter</button>':'');
+  if(!on.length){
+    return h+empty('ruler','Le mètre ruban n’est pas activé',
+      'Quand tu remplaces du gras par du muscle, la balance ne bouge pas — le tour de taille, si. C’est aussi la mesure la plus parlante pour la santé.',
+      '<button class="btn btn--primary" data-act="metric-on" data-k="waist">Activer le tour de taille</button>')
+      +measGuide();
+  }
+  const stats=on.map(tapeStats).filter(Boolean);
+  if(!stats.length){
+    return h+empty('ruler','Aucune mesure enregistrée',
+      'Prends tes mesures le matin, à jeun, avant de boire. Une fois toutes les deux ou trois semaines suffit : ça bouge lentement, et c’est tant mieux.',
+      '<button class="btn btn--primary" data-act="meas-add">'+ic('ruler')+'Prendre mes mesures</button>')
+      +measGuide();
+  }
+
+  /* ---- Le rapport taille / hauteur ---- */
+  const wr=whtrNow();
+  if(wr){
+    const z=whtrZone(wr.v), cible=Math.round(wr.heightCm*0.5*10)/10;
+    const reste=Math.round((wr.waist-cible)*10)/10;
+    h+='<div class="card hero">'
+     +'<div class="hero-label">Tour de taille</div>'
+     +'<div class="hero-value tnum"><span data-count="'+wr.waist.toFixed(1)+'" data-dec="1">'+nf(wr.waist,1)+'</span><span class="hero-unit">cm</span></div>'
+     +'<div class="hero-sub">mesuré le '+esc(fmtDateShort(wr.date))+'</div>'
+     +'<div class="whtr">'
+     +'<div class="whtr-top"><span>0,40</span><span class="whtr-mid">tour de taille ÷ hauteur</span><span>0,65</span></div>'
+     +'<div class="whtr-track">'
+     +'<span class="whtr-zone whtr-ok"></span>'
+     +'<span class="whtr-mark"><b>0,50</b></span>'
+     +'<span class="whtr-cursor" style="left:'+r1(clamp((wr.v-0.40)/0.25,0,1)*100)+'%"></span></div>'
+     +'<div class="whtr-val '+z.cls+'">'+nf(wr.v,2)+' — '+esc(z.label)+'</div></div>'
+     +'<div class="small muted" style="margin-top:10px;text-align:left">'
+     +(z.code==='ok'
+        ?'Ton tour de taille est sous la moitié de ta hauteur ('+nf(cible,1)+' cm). C’est le repère le plus simple qui existe, et tu es du bon côté.'
+        :(z.code==='bas'
+          ?'Ton tour de taille est très bas par rapport à ta hauteur. Ce n’est pas une cible à poursuivre plus loin.'
+          :'Le repère simple tient en une phrase : <i>tour de taille sous la moitié de la hauteur</i> — pour toi, <b>'+nf(cible,1)+' cm</b>. '
+           +'Tu en es à '+nf(reste,1)+' cm, et chaque centimètre compte : ce rapport vaut mieux que l’IMC, il ne confond pas un corps musclé avec un corps gras.'))
+     +'</div></div>';
+    const marks=WAIST_MARKS[state.settings.profile.sex==='f'?'f':'m'];
+    if(wr.waist>=marks[0]) h+='<div class="card" style="margin-top:10px"><div class="small muted">'
+      +'Les repères usuels situent l’attention à partir de '+marks[0]+' cm et plus nettement à partir de '+marks[1]+' cm. '
+      +'Ce sont des moyennes de population, pas un diagnostic : seul ton médecin peut en tirer une conclusion te concernant.'
+      +'</div></div>';
+  } else if(metricOn('waist')&&!state.settings.profile.heightCm){
+    h+='<div class="card"><div class="small muted">Renseigne ta taille pour voir ton rapport tour de taille / hauteur.</div>'
+     +'<button class="btn btn--ghost btn--block" data-act="go" data-route="/reglages" style="margin-top:10px">Renseigner ma taille</button></div>';
+  }
+
+  /* ---- Chaque mesure, avec son évolution ---- */
+  h+='<div class="section-title">Tes mesures</div><div class="list">';
+  stats.forEach(st=>{
+    const M=METRICS[st.key];
+    const dcls=st.delta==null?'delta--flat':signCls(st.delta,M.better);
+    const age=diffDays(st.date,isoToday());
+    h+='<div class="row" data-act="meas-add" data-k="'+st.key+'">'
+     +'<div class="row-ic" style="color:'+M.color+'">'+ic(M.icon)+'</div>'
+     +'<div class="row-main"><div class="row-title">'+esc(M.label)+'</div>'
+     +'<div class="row-sub">'+(age===0?'aujourd’hui':(age===1?'hier':'il y a '+age+' jours'))
+     +(st.n>1?' · '+st.n+' mesures':'')+'</div></div>'
+     +'<div style="text-align:right;flex:none"><div class="row-amt tnum">'+nf(st.v,1)+'<span class="muted" style="font-size:12px"> cm</span></div>'
+     +(st.delta!=null?'<div class="small '+dcls+'">'+(st.delta>0?'+':(st.delta<0?MINUS:''))+nf(Math.abs(st.delta),1)+' cm</div>':'')
+     +'</div></div>';
+  });
+  h+='</div>';
+
+  /* ---- La courbe du tour de taille, quand il y a de quoi tracer ---- */
+  const wst=stats.find(x=>x.key==='waist');
+  if(wst&&wst.n>=3){
+    const pts=seriesPoints('waist','cm',wst.since,isoToday());
+    /* Même câblage que les Courbes : l'identifiant doit être donné À LA FOIS à
+       lineChart (pour la zone de lecture) et à chartSlot (pour le scrubber). */
+    h+='<div class="chart-card"><div class="chart-title">Tour de taille</div>'
+     +'<div class="chart-readout" id="ro-meas-waist" aria-live="polite">'+chReadoutDefault(pts,'waist','cm')+'</div>'
+     +chartSlot(w=>lineChart([{key:'waist',label:'Tour de taille',color:METRICS.waist.color,unit:'cm',dec:1,points:pts}],
+        {w:w,h:CH_H,from:pts[0].date,to:isoToday(),id:'meas-waist',readoutId:'ro-meas-waist',
+         scrub:true,yUnit:'cm',gap:45}),{h:CH_H,scrub:true,id:'meas-waist'})
+     +'</div>';
+    if(wst.delta!=null&&wst.delta<-1){
+      const kg=kgLost();
+      h+='<div class="insight" style="margin-top:12px"><div class="insight-ic">'+ic('ruler')+'</div>'
+       +'<div class="insight-txt">Tu as perdu <b>'+nf(-wst.delta,1)+' cm</b> de tour de taille'
+       +(kg!=null&&kg>0?' pour '+fmtKg(kg)+' sur la balance':'')+'. '
+       +'C’est la graisse du ventre qui part en premier quand on est en déficit — et c’est la meilleure nouvelle de ton suivi.</div></div>';
+    }
+  }
+
+  /* ---- Rapport taille / hanches, si les deux sont là ---- */
+  const hp=stats.find(x=>x.key==='hips');
+  if(wst&&hp){
+    const rth=Math.round(wst.v/hp.v*100)/100;
+    h+='<div class="card" style="margin-top:12px"><div class="row-title flex aic gap8">'+ic('layers','ic--sm')+'Taille / hanches</div>'
+     +'<div class="kv" style="margin-top:8px"><span class="kv-k">Rapport</span><span class="kv-v tnum">'+nf(rth,2)+'</span></div>'
+     +'<div class="small muted" style="margin-top:8px">Il dit <i>où</i> se loge la graisse. Plus il baisse, plus la répartition se déplace du ventre vers le reste — '
+     +'ce qui compte davantage que le chiffre absolu.</div></div>';
+  }
+
+  /* ---- Les autres mesures activables ---- */
+  const off=TAPE_KEYS.filter(k=>!metricOn(k));
+  if(off.length){
+    h+='<div class="section-title">Ajouter une mesure</div><div class="chip-wrap">'
+     +off.map(k=>'<button class="chip chip--act" data-act="metric-on" data-k="'+k+'">'
+        +ic('plus','ic--sm')+esc(METRICS[k].label)+'</button>').join('')+'</div>';
+  }
+  return h+measGuide();
+}
+/* Comment mesurer — la moitié de la fiabilité vient du protocole, pas du mètre. */
+function measGuide(){
+  return '<div class="section-title">Bien mesurer</div>'
+   +'<details class="acc"><summary class="acc-sum"><span class="acc-ic">'+ic('ruler')+'</span>'
+   +'<span class="acc-t"><b>Le protocole en cinq points</b></span><span class="acc-ch"></span></summary>'
+   +'<div class="acc-body"><ol class="tip-ol">'
+   +'<li><b>Le matin, à jeun</b>, avant de boire et après être passé aux toilettes. Comme la pesée.</li>'
+   +'<li><b>Au niveau du nombril</b> pour la taille — pas au plus fin. Le repère doit être reproductible, pas flatteur.</li>'
+   +'<li><b>Debout, détendu, expire normalement.</b> Ne rentre pas le ventre : tu mesurerais ta volonté, pas ton corps.</li>'
+   +'<li><b>Le mètre à plat</b>, parallèle au sol, serré sans creuser la peau.</li>'
+   +'<li><b>Toujours le même mètre</b>, et note dans la foulée. Deux mesures d’affilée qui diffèrent de plus d’un centimètre : recommence.</li>'
+   +'</ol><p class="tip-note">Une fois toutes les deux ou trois semaines suffit largement. Le tour de taille bouge lentement — '
+   +'le mesurer tous les jours n’apporterait que du bruit.</p></div></details>'
+   +'<details class="acc"><summary class="acc-sum"><span class="acc-ic">'+ic('gauge')+'</span>'
+   +'<span class="acc-t"><b>Pourquoi ce rapport plutôt que l’IMC</b></span><span class="acc-ch"></span></summary>'
+   +'<div class="acc-body"><p>L’IMC ne connaît que ton poids et ta taille. Il classe un rugbyman musclé et une personne sédentaire '
+   +'du même gabarit exactement pareil, parce qu’il ne sait pas <i>de quoi</i> tu es fait.</p>'
+   +'<p>Le rapport <b>tour de taille ÷ hauteur</b> regarde là où la graisse pose vraiment un problème : autour des organes. '
+   +'Il tient sur une seule phrase — <i>garde ton tour de taille sous la moitié de ta taille</i> — et il fonctionne quelle que soit ta morphologie.</p>'
+   +'<p class="tip-note">Ni l’un ni l’autre n’est un diagnostic. Ce sont des repères pour suivre une direction, pas pour se juger.</p>'
+   +'</div></details>';
+}
+
+/* ============================================================
+   ÉCRAN : MA SEMAINE
+   ------------------------------------------------------------
+   Le quotidien montre le bruit ; la semaine montre le signal.
+   Sept jours, c'est assez long pour que l'eau, le sel et une
+   grosse séance se compensent, et assez court pour qu'on se
+   souvienne de ce qui s'est passé.
+
+   Trois principes tenus ici :
+   • On compare des TENDANCES, pas deux pesées isolées : la
+     différence entre le lundi et le dimanche dépend surtout du
+     repas du samedi soir.
+   • On ne juge jamais une semaine en cours. Tant qu'elle n'est
+     pas finie, on annonce « en cours », pas un bilan.
+   • Aucun jour n'est « mauvais ». On nomme le jour le plus léger,
+     jamais le plus lourd.
+   ============================================================ */
+function weekOfUI(){
+  const w=state.ui.weekStart;
+  return (validYMD(w))?weekStartYMD(w):weekStartYMD(isoToday());
+}
+/* Tout ce qu'on sait d'une semaine, en un objet. */
+function weekReport(mon){
+  const sun=addDayYMD(mon,6), today=isoToday();
+  const enCours=sun>=today;
+  const last=minYMD(sun,today);
+  const days=[];
+  for(let i=0;i<7;i++){
+    const d=addDayYMD(mon,i);
+    const e=entryFor(d);
+    days.push({date:d, w:e?mv(e,'weight'):null, kcal:e?mv(e,'kcalIn'):null,
+               futur:d>today, note:e&&e.note?e.note:null,
+               saute:!!(state.ui.skippedDays||{})[d]});
+  }
+  const pesees=days.filter(d=>d.w!=null);
+  /* La variation de la semaine se lit sur la TENDANCE, pas sur deux pesées.
+     Repli sur la première et la dernière pesée quand la tendance manque. */
+  const tA=trendAt(addDayYMD(mon,-1)), tB=trendAt(last);
+  let delta=null, source='tendance';
+  if(tA!=null&&tB!=null) delta=Math.round((tB-tA)*100)/100;
+  else if(pesees.length>=2){ delta=Math.round((pesees[pesees.length-1].w-pesees[0].w)*100)/100; source='pesees'; }
+  const vals=pesees.map(d=>d.w);
+  const moy=vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null;
+  const plusLeger=pesees.length?pesees.reduce((a,b)=>b.w<a.w?b:a):null;
+  const ecart=vals.length>1?(Math.max.apply(null,vals)-Math.min.apply(null,vals)):null;
+  const kcals=days.filter(d=>d.kcal!=null).map(d=>d.kcal);
+  const kcalMoy=kcals.length?Math.round(kcals.reduce((a,b)=>a+b,0)/kcals.length):null;
+  let sportMin=0, sportN=0;
+  if(state.settings.modules.sport){
+    const ss=sessionsInRange(mon,last);
+    sportN=ss.length; sportMin=ss.reduce((a,x)=>a+(x.durationMin||0),0);
+  }
+  let pill=null;
+  if(state.settings.modules.pillbox){
+    let exp=0,tak=0,nj=0;
+    for(let i=0;i<7;i++){ const d=addDayYMD(mon,i); if(d>today) break;
+      const c=pillDayCounts(d); if(c.partial||!c.expected) continue;
+      exp+=c.expected; tak+=Math.min(c.taken,c.expected); nj++; }
+    if(exp) pill={pct:Math.round(tak/exp*100),jours:nj};
+  }
+  return {mon:mon,sun:sun,enCours:enCours,last:last,days:days,pesees:pesees.length,
+          delta:delta,source:source,moy:moy,plusLeger:plusLeger,ecart:ecart,
+          kcalMoy:kcalMoy,kcalJours:kcals.length,sportMin:sportMin,sportN:sportN,pill:pill,
+          notes:days.filter(d=>d.note).length};
+}
+function weekLabel(mon){
+  const sun=addDayYMD(mon,6), t=weekStartYMD(isoToday());
+  if(mon===t) return 'Cette semaine';
+  if(mon===addDayYMD(t,-7)) return 'La semaine dernière';
+  const a=parseYMD(mon), b=parseYMD(sun);
+  const sameMonth=a.getMonth()===b.getMonth();
+  return 'Du '+a.getDate()+(sameMonth?'':' '+MOIS3[a.getMonth()])+' au '+b.getDate()+' '+MOIS3[b.getMonth()];
+}
+function screenSemaine(){
+  const mon=weekOfUI(), r=weekReport(mon), t=weekStartYMD(isoToday());
+  const first=firstEntry();
+  const canPrev=!first||mon>weekStartYMD(first.date);
+  const canNext=mon<t;
+  let h=backHead('Ma semaine','/plus');
+  h+='<div class="wknav">'
+   +'<button class="icon-btn'+(canPrev?'':' is-off')+'" data-act="wk-prev" aria-label="Semaine précédente">'+ic('back')+'</button>'
+   +'<div class="wknav-mid"><div class="wknav-t">'+esc(weekLabel(mon))+'</div>'
+   +'<div class="wknav-s">'+esc(fmtDateShort(mon))+' – '+esc(fmtDateShort(r.sun))+'</div></div>'
+   +'<button class="icon-btn'+(canNext?'':' is-off')+'" data-act="wk-next" aria-label="Semaine suivante">'+ic('chevron')+'</button>'
+   +'</div>';
+
+  if(!r.pesees){
+    h+=empty('calendar','Aucune pesée cette semaine-là',
+      mon===t?'La semaine commence à peine. Une pesée et le bilan apparaît.'
+             :'Rien n’a été noté du '+fmtDateShort(mon)+' au '+fmtDateShort(r.sun)+'. Ce n’est pas grave : les trous ne faussent pas ta tendance.',
+      mon===t?'<button class="btn btn--primary" data-act="weigh-in">'+ic('scale')+'Peser maintenant</button>':'');
+    return h+weekJump(mon,t);
+  }
+
+  /* ---- Le chiffre de la semaine ---- */
+  h+='<div class="card hero">'
+   +'<div class="hero-label">'+(r.enCours?'Depuis lundi':'Sur la semaine')+'</div>'
+   +'<div class="hero-value tnum '+(r.delta==null?'':deltaClass(r.delta,-1))+'">'
+   +(r.delta==null?'—':sgnKg(r.delta))+'</div>'
+   +'<div class="hero-sub">'+esc(weekVerdict(r))+'</div>'
+   +weekStrip(r)+'</div>';
+
+  /* ---- Les chiffres ---- */
+  const ecoules=r.enCours?(diffDays(mon,r.last)+1):7;
+  const cells=[statCard('Pesées',r.pesees+'/7',
+                        r.enCours?(ecoules+' '+plural(ecoules,'jour')+' '+plural(ecoules,'écoulé'))
+                                 :(r.pesees>=6?'régularité au top':(r.pesees>=4?'bonne base':'peu de points')),'')];
+  if(r.moy!=null) cells.push(statCard('Poids moyen',fmtKg(r.moy),'sur '+r.pesees+' '+plural(r.pesees,'jour'),''));
+  if(r.ecart!=null) cells.push(statCard('Amplitude',nf(r.ecart,1)+NBSP+'kg','du plus léger au plus lourd',''));
+  if(r.kcalMoy!=null) cells.push(statCard('Calories/jour',nf(r.kcalMoy,0),r.kcalJours+' '+plural(r.kcalJours,'jour')+' '+plural(r.kcalJours,'noté'),''));
+  /* Une semaine sans sport ou sans pilulier ne fabrique PAS une carte à zéro :
+     un « 0 % » en gros au milieu de l'écran est un reproche, pas une information.
+     Le récit, lui, en parle avec des mots. */
+  if(r.sportMin>0) cells.push(statCard('Sport',fmtMin(r.sportMin),r.sportN+' '+plural(r.sportN,'séance'),''));
+  if(r.pill&&r.pill.pct>0) cells.push(statCard('Pilulier',r.pill.pct+' %','sur '+r.pill.jours+' '+plural(r.pill.jours,'jour'),''));
+  const shown=cells.slice(0,4);
+  h+='<div class="stats'+(shown.length===4?' stats-2':(shown.length===2?' stats-2':''))+'" style="margin-top:12px">'+shown.join('')+'</div>';
+  if(cells.length>4) h+='<div class="stats stats-2" style="margin-top:10px">'+cells.slice(4,6).join('')+'</div>';
+
+  /* ---- Le récit ---- */
+  h+='<div class="section-title">Ce qu’il s’est passé</div>'
+   +'<div class="card"><div class="why" style="font-style:normal">'+weekStory(r)+'</div></div>';
+
+  /* ---- Comparaison avec la semaine d'avant ---- */
+  const prev=weekReport(addDayYMD(mon,-7));
+  if(prev.pesees>=2||prev.delta!=null) h+=weekCompare(r,prev);
+
+  h+='<div class="btn-row" style="margin-top:14px">'
+   +'<button class="btn btn--ghost" data-act="go" data-route="/courbes">'+ic('chart')+'Courbes</button>'
+   +'<button class="btn btn--ghost" data-act="go" data-route="/tableau">'+ic('table')+'Tableau</button></div>';
+  return h+weekJump(mon,t);
+}
+/* Le raccourci « revenir à cette semaine », seulement quand on s'est éloigné. */
+function weekJump(mon,t){
+  if(mon===t) return '';
+  return '<button class="btn btn--ghost btn--block" data-act="wk-today" style="margin-top:10px">'
+   +ic('calendar')+'Revenir à cette semaine</button>';
+}
+/* Sept colonnes : le poids du jour, sa hauteur relative, et le jour de la semaine. */
+function weekStrip(r){
+  const vals=r.days.filter(d=>d.w!=null).map(d=>d.w);
+  const mn=vals.length?Math.min.apply(null,vals):0, mx=vals.length?Math.max.apply(null,vals):1;
+  const span=Math.max(0.4,mx-mn);
+  const t=isoToday();
+  return '<div class="wkstrip">'+r.days.map((d,i)=>{
+    const has=d.w!=null;
+    /* Plus lourd = plus haut. On garde une base de 18 % pour que le jour le plus
+       léger reste une barre visible, et pas un trait écrasé au sol. */
+    const hpct=has?(18+((d.w-mn)/span)*60):0;
+    const cls=has?'on':(d.futur?'futur':(d.saute?'skip':'off'));
+    return '<button class="wkday '+cls+(d.date===t?' today':'')+'" data-act="weigh-in" data-date="'+d.date+'"'
+      +' aria-label="'+esc(capit(fmtDateLong(d.date)))+(has?' — '+nf(d.w,1)+' kg':' — pas de pesée')+'">'
+      +'<span class="wkday-bar"'+(has?' style="height:'+r1(hpct)+'%"':'')+'></span>'
+      +'<span class="wkday-v">'+(has?nf(d.w,1):(d.futur?'':'·'))+'</span>'
+      +'<span class="wkday-d">'+JOURS_MIN[(i+1)%7]+'</span></button>';
+  }).join('')+'</div>';
+}
+/* La phrase sous le grand chiffre. Explique avant de chiffrer. */
+function weekVerdict(r){
+  if(r.delta==null) return r.pesees<2?'Une seule pesée : pas encore de variation à lire.':'Pas assez de recul pour cette semaine.';
+  const a=Math.abs(r.delta);
+  if(r.enCours) return 'Semaine en cours — le bilan se stabilisera dimanche.';
+  if(a<0.15) return 'Un poids stable. Sur sept jours, c’est un maintien, pas un blocage.';
+  if(r.delta<0) return a>1.2?'Une grosse semaine. Une part est de l’eau : la suivante le dira.'
+                           :'Tu es plus léger qu’en début de semaine.';
+  return a>1.0?'La balance est montée. Sel, glucides, séance intense : ça se dégonfle en quelques jours.'
+             :'Léger rebond. C’est dans la marge de bruit d’une semaine ordinaire.';
+}
+/* Le récit : trois à cinq phrases, en français, sans jugement. */
+function weekStory(r){
+  const P=[];
+  const nb=r.pesees, jours=r.enCours?(diffDays(r.mon,r.last)+1):7;
+  if(nb===jours) P.push('Tu t’es pesé <b>tous les jours</b> de la semaine.');
+  else if(nb>=jours-1) P.push('Tu t’es pesé <b>'+nb+' '+plural(nb,'jour')+' sur '+jours+'</b> — c’est largement assez pour une tendance fiable.');
+  else if(nb>=3) P.push('<b>'+nb+' '+plural(nb,'pesée')+'</b> cette semaine. La tendance tient, même avec des trous.');
+  else P.push('<b>'+nb+' '+plural(nb,'pesée')+'</b> seulement : je lis la semaine, mais avec prudence.');
+
+  if(r.ecart!=null&&r.ecart>=0.8)
+    P.push('Entre ton jour le plus léger et le plus lourd, il y a <b>'+nf(r.ecart,1)+' kg</b>. '
+      +'C’est presque toujours de l’eau : une journée salée, un repas tardif ou une grosse séance suffisent.');
+  if(r.plusLeger&&nb>=3)
+    P.push('Ton jour le plus léger : <b>'+esc(capit(parseYMD(r.plusLeger.date).toLocaleDateString('fr-FR',{weekday:'long'})))
+      +'</b>, à '+fmtKg(r.plusLeger.w)+'.');
+
+  if(r.kcalMoy!=null&&r.kcalJours>=3){
+    const mk=(typeof maintenanceKcal==='function')?maintenanceKcal():null;
+    const neutre=mk&&mk.kcal?mk.kcal:null;
+    if(neutre){
+      const ec=Math.round(r.kcalMoy-neutre);
+      P.push('Tu as mangé <b>'+nf(r.kcalMoy,0)+' kcal par jour</b> en moyenne'
+        +(Math.abs(ec)<80?', soit à peu près ton point neutre.'
+         :(ec<0?', soit <b>'+nf(-ec,0)+' kcal sous</b> ton point neutre — environ '+fmtKg(Math.abs(ec)*7/KCAL_PER_KG_FAT)+' par semaine en théorie.'
+               :', soit '+nf(ec,0)+' kcal au-dessus de ton point neutre.')));
+    } else P.push('Tu as mangé <b>'+nf(r.kcalMoy,0)+' kcal par jour</b> en moyenne, sur '+r.kcalJours+' '+plural(r.kcalJours,'jour')+' noté'+(r.kcalJours>1?'s':'')+'.');
+  }
+  if(state.settings.modules.sport){
+    if(r.sportN===0) P.push('Aucune séance notée. Une semaine sans sport ne casse rien — la régularité se juge sur le mois.');
+    else P.push('<b>'+r.sportN+' '+plural(r.sportN,'séance')+'</b> pour '+fmtMin(r.sportMin)+' au total.');
+  }
+  if(r.pill&&r.pill.pct>=90) P.push('Pilulier tenu à <b>'+r.pill.pct+' %</b>.');
+  return P.join(' ');
+}
+/* La comparaison : deux semaines côte à côte, sans classement. */
+function weekCompare(r,prev){
+  const rows=[['Pesées',r.pesees+'/7',prev.pesees+'/7']];
+  if(r.delta!=null&&prev.delta!=null) rows.push(['Variation',sgnKg(r.delta),sgnKg(prev.delta)]);
+  if(r.moy!=null&&prev.moy!=null) rows.push(['Poids moyen',fmtKg(r.moy),fmtKg(prev.moy)]);
+  if(r.kcalMoy!=null&&prev.kcalMoy!=null) rows.push(['Calories/jour',nf(r.kcalMoy,0),nf(prev.kcalMoy,0)]);
+  if(state.settings.modules.sport&&(r.sportMin||prev.sportMin)) rows.push(['Sport',fmtMin(r.sportMin),fmtMin(prev.sportMin)]);
+  if(rows.length<2) return '';
+  return '<div class="section-title">Face à la semaine d’avant</div><div class="card"><div class="wk-table">'
+   +'<div class="wk-row wk-head"><span></span><span>'+(r.enCours?'En cours':'Cette semaine')+'</span><span>Précédente</span></div>'
+   +rows.map(o=>'<div class="wk-row"><span class="wk-d">'+esc(o[0])+'</span><span>'+o[1]+'</span><span class="muted">'+o[2]+'</span></div>').join('')
+   +'</div></div>';
 }
 
 /* ============================================================
@@ -5134,10 +5669,10 @@ function screenSimulateur(){
   let h=backHead('Simulateur','/analyse');
   const w=refWeight().kg, m=maintenanceKcal();
   if(w==null||!state.settings.profile.heightCm)
-    return h+empty('🧮','Il me manque deux chiffres','Ta taille et une pesée suffisent pour lancer la simulation.',
+    return h+empty('calculator','Il me manque deux chiffres','Ta taille et une pesée suffisent pour lancer la simulation.',
       '<button class="btn btn--primary" data-act="go" data-route="/reglages">Compléter mon profil</button>');
   if(m.kcal==null)
-    return h+empty('🧮','Point neutre indisponible','Renseigne ta taille et ton année de naissance dans les réglages.',
+    return h+empty('calculator','Point neutre indisponible','Renseigne ta taille et ton année de naissance dans les réglages.',
       '<button class="btn btn--primary" data-act="go" data-route="/reglages">Aller aux réglages</button>');
 
   const intake=simIntake(), tg=simTarget();
@@ -5211,12 +5746,12 @@ function screenSimulateur(){
     /* Le garde-fou : au-delà de 1 % du poids par semaine, la part de muscle perdue monte. */
     const pctW=Math.abs(perWeek)/Math.max(1,w)*100;
     if(perWeek<0&&pctW>1.05)
-      h+='<div class="insight insight--neutral" style="margin-top:12px"><div class="insight-ic">🐢</div><div class="insight-txt">'
+      h+='<div class="insight insight--neutral" style="margin-top:12px"><div class="insight-ic">'+ic('gauge')+'</div><div class="insight-txt">'
        +'À ce niveau tu perdrais <strong>'+nf(pctW,1)+' % de ton poids par semaine</strong>. Au-delà de 1 %, la part de masse maigre perdue augmente mécaniquement, et la faim devient difficile à tenir. '
        +'Pour toi, la zone confortable va de '+fmtKg(w*0.005)+' à '+fmtKg(w*0.01)+' par semaine.'
        +'</div></div>';
     else if(perWeek<0&&pctW>=0.4)
-      h+='<div class="insight" style="margin-top:12px"><div class="insight-ic">✅</div><div class="insight-txt">'
+      h+='<div class="insight" style="margin-top:12px"><div class="insight-ic">'+ic('check')+'</div><div class="insight-txt">'
        +'<strong>'+nf(pctW,2)+' % de ton poids par semaine</strong> : c’est exactement la zone qui se tient sur la durée.'
        +'</div></div>';
 
@@ -5235,7 +5770,7 @@ function screenSimulateur(){
      +'</div><div class="hint" style="margin-top:10px">Touche une ligne pour l’essayer.</div></div>';
   }
 
-  h+='<div class="card" style="margin-top:12px"><div class="row-title">🧱 Le seul chiffre à retenir</div>'
+  h+='<div class="card" style="margin-top:12px"><div class="row-title flex aic gap8">'+ic('bricks','ic--sm')+'Le seul chiffre à retenir</div>'
    +'<div class="small muted" style="margin-top:6px;line-height:1.55">Un kilo de graisse, c’est environ <b>7 700 kcal</b>. Pour en perdre un par semaine, il faut donc creuser à peu près <b>1 100 kcal par jour</b> — c’est beaucoup. '
    +'À <b>−500 kcal par jour</b>, tu perds environ <b>0,45 kg par semaine</b>, soit près de 2 kg par mois. C’est le rythme que la plupart des gens tiennent sur la durée.</div></div>';
   h+='<div class="hint" style="margin-top:12px">Une projection n’est pas une promesse : l’eau, le sel et le glycogène font zigzaguer la balance autour de cette ligne. C’est la direction qui compte.</div>';
@@ -5255,7 +5790,7 @@ function screenSimulateur(){
    ============================================================ */
 function tipCard(o){
   return '<details class="acc"'+(o.open?' open':'')+'>'
-   +'<summary class="acc-sum"><span class="acc-ic">'+o.emoji+'</span>'
+   +'<summary class="acc-sum"><span class="acc-ic">'+ic(o.icon)+'</span>'
    +'<span class="acc-t"><b>'+esc(o.title)+'</b>'+(o.badge?'<span class="acc-b">'+esc(o.badge)+'</span>':'')+'</span>'
    +'<span class="acc-ch" aria-hidden="true"></span></summary>'
    +'<div class="acc-body">'+o.body+'</div></details>';
@@ -5270,7 +5805,7 @@ function screenAstuces(){
 
   /* 1. Le palier, en tête quand il est là : c'est le moment où on abandonne. */
   if(pl.isPlateau){
-    T.push({p:100,emoji:'🪨',title:'Ton poids fait une pause',badge:pl.sinceDays+' jours',open:true,body:
+    T.push({p:100,icon:'layers',title:'Ton poids fait une pause',badge:pl.sinceDays+' jours',open:true,body:
       '<p>Un palier n’est pas un arrêt de la perte de graisse : c’est presque toujours de l’eau qui prend la place. '
       +'Le corps garde plus d’eau quand le stress monte, quand on mange plus salé, ou quand un muscle a travaillé dur.</p>'
       +'<p><b>Quatre choses à regarder, dans cet ordre :</b></p>'
@@ -5283,7 +5818,7 @@ function screenAstuces(){
   }
   /* 2. Protéines : le seul levier alimentaire vraiment déterminant en déficit. */
   const pt=proteinTarget(), ps=proteinStats(14);
-  if(pt) T.push({p:95,emoji:'🥩',title:'Tes protéines',badge:'≈ '+pt.g+' g/jour',open:!pl.isPlateau,body:
+  if(pt) T.push({p:95,icon:'meat',title:'Tes protéines',badge:'≈ '+pt.g+' g/jour',open:!pl.isPlateau,body:
     '<p>En déficit, le corps pioche dans la graisse <i>et</i> dans le muscle. Manger assez de protéines est ce qui déplace le curseur vers la graisse. '
     +'C’est aussi ce qui cale le mieux : à calories égales, un repas riche en protéines tient plus longtemps.</p>'
     +'<p>Pour toi, cela représente environ <b>'+pt.g+' g par jour</b> (1,6 g par kilo de poids de forme, estimé à '+pt.basisKg+' kg). '
@@ -5294,7 +5829,7 @@ function screenAstuces(){
       +'<button class="btn btn--ghost btn--block" data-act="metric-on" data-k="protIn" style="margin-top:10px">Suivre mes protéines</button>')
     +'<p class="tip-note">Repères : 100 g de poulet ≈ 23 g · un œuf ≈ 6 g · un yaourt grec ≈ 10 g · 100 g de thon ≈ 25 g · une dose de whey ≈ 20 à 25 g.</p>'});
   /* 3. Le rythme. */
-  T.push({p:90,emoji:'🐢',title:'À quelle vitesse perdre',badge:pctWeek!=null?nf(pctWeek,1)+' %/sem.':null,body:
+  T.push({p:90,icon:'gauge',title:'À quelle vitesse perdre',badge:pctWeek!=null?nf(pctWeek,1)+' %/sem.':null,body:
     '<p>La fourchette qui tient sur la durée va de <b>0,5 à 1 % de ton poids par semaine</b>. '
     +(ref?'Pour toi aujourd’hui, cela fait <b>'+fmtKg(ref*0.005)+' à '+fmtKg(ref*0.01)+' par semaine</b>.':'')+'</p>'
     +'<p>Plus vite, ce n’est pas « mieux » : la part de muscle perdue augmente, la faim aussi, et le rebond guette. Plus lentement, c’est parfaitement valable — c’est même souvent ce qui reste.</p>'
@@ -5302,9 +5837,9 @@ function screenAstuces(){
        +(pctWeek>1.2?'C’est rapide. Si tu as faim en permanence, remonte un peu ton assiette : tu perdras presque autant, en te sentant mieux.'
         :(pctWeek<0.15?'C’est lent en ce moment. Ce n’est pas grave si ça te convient — la régularité bat la vitesse.'
         :'Tu es exactement dans la bonne zone.'))+'</p>':'')
-    +'<button class="btn btn--ghost btn--block" data-act="go" data-route="/simulateur" style="margin-top:10px">🧮 Essayer un autre rythme</button>'});
+    +'<button class="btn btn--ghost btn--block" data-act="go" data-route="/simulateur" style="margin-top:10px">'+ic('calculator')+'Essayer un autre rythme</button>'});
   /* 4. Peser juste. */
-  T.push({p:85,emoji:'⚖️',title:'Peser dans les mêmes conditions',body:
+  T.push({p:85,icon:'scale',title:'Peser dans les mêmes conditions',body:
     '<p>Une balance ne se trompe pas beaucoup, mais elle mesure tout : l’eau, le contenu de l’intestin, le sel de la veille. '
     +'Pour que deux pesées soient comparables, il faut qu’elles se ressemblent.</p>'
     +'<ul class="tip-ul"><li>Au réveil, après être passé aux toilettes, avant de boire ou de manger.</li>'
@@ -5314,14 +5849,14 @@ function screenAstuces(){
     +'<li>Pieds secs et propres : l’impédance passe par la peau.</li></ul>'
     +'<p class="tip-note">Les mesures de composition (gras, eau, muscle) sont bien plus sensibles que le poids : à lire uniquement en tendance sur deux ou trois semaines.</p>'});
   /* 5. Le sel, l'eau, le lendemain de fête. */
-  T.push({p:80,emoji:'🍜',title:'Le lendemain d’un gros repas',body:
+  T.push({p:80,icon:'plate',title:'Le lendemain d’un gros repas',body:
     '<p>Le matin après un restaurant ou un repas de famille, la balance monte souvent de <b>1 à 2 kg</b>. '
     +'Ce ne sont pas des kilos de graisse : il faudrait manger 7 700 kcal en trop pour fabriquer un seul kilo de gras.</p>'
     +'<p>Ce que tu vois, c’est du sel et des glucides qui retiennent de l’eau, plus le poids de ce qui n’est pas encore digéré. '
     +'Ça s’en va tout seul en <b>deux à quatre jours</b>, surtout si tu bois normalement et que tu bouges un peu.</p>'
     +'<p class="tip-note">Le réflexe utile : continuer à se peser. Sauter la pesée « parce que ça va être moche », c’est perdre l’information qui montre justement que ça redescend.</p>'});
   /* 6. Bouger hors sport — le plus gros levier après l'assiette. */
-  T.push({p:75,emoji:'👟',title:'Ce que tu brûles sans t’en rendre compte',body:
+  T.push({p:75,icon:'steps',title:'Ce que tu brûles sans t’en rendre compte',body:
     '<p>Entre deux personnes de même poids, l’écart de dépense quotidienne lié aux gestes ordinaires — marcher, monter un escalier, rester debout — peut atteindre <b>plusieurs centaines de calories</b>. '
     +'C’est plus que trois séances de sport dans la semaine.</p>'
     +'<p>Le piège : quand on mange moins, on bouge spontanément moins, sans le décider. C’est l’une des causes les plus fréquentes de palier.</p>'
@@ -5330,20 +5865,20 @@ function screenAstuces(){
     +'<li>Une marche de 10 minutes après le repas : elle aide aussi la digestion et la glycémie.</li></ul>'
     +(metricOn('steps')?'':'<button class="btn btn--ghost btn--block" data-act="metric-on" data-k="steps" style="margin-top:10px">Suivre mes pas</button>')});
   /* 7. Muscu en déficit. */
-  if(state.settings.modules.sport) T.push({p:70,emoji:'🏋️',title:'Pourquoi soulever quelque chose',body:
+  if(state.settings.modules.sport) T.push({p:70,icon:'dumbbell',title:'Pourquoi soulever quelque chose',body:
     '<p>Le sport d’endurance brûle des calories pendant la séance. Le travail en force, lui, envoie un signal différent : « garde ce muscle, il sert ». '
     +'En déficit, c’est ce signal qui détermine si les kilos perdus viennent surtout du gras.</p>'
     +'<p>Deux à trois séances par semaine suffisent largement. Les mouvements qui font travailler beaucoup de muscles à la fois (squat, tirage, pompes, fentes) rapportent le plus par minute passée.</p>'
     +'<p class="tip-note">Effet secondaire connu : un muscle qui vient de travailler retient de l’eau pendant deux à trois jours. La balance monte alors que tout va bien.</p>'});
   /* 8. Sommeil. */
-  T.push({p:65,emoji:'😴',title:'Le sommeil pèse sur la balance',body:
+  T.push({p:65,icon:'moon',title:'Le sommeil pèse sur la balance',body:
     '<p>Quand on dort peu, l’appétit augmente le lendemain — en particulier pour le sucré et le gras — et la volonté baisse. '
     +'Ce n’est pas un manque de caractère : c’est de la chimie.</p>'
     +'<p>À déficit identique, mieux dormir change la proportion de graisse dans ce que tu perds. C’est le levier le moins coûteux de tous.</p>'
     +(metricOn('sleep')?'<p class="tip-note">Tu notes déjà ton sommeil : dans quelques semaines, la courbe dira si tes nuits courtes se voient sur ta balance.</p>'
       :'<button class="btn btn--ghost btn--block" data-act="metric-on" data-k="sleep" style="margin-top:10px">Suivre mon sommeil</button>')});
   /* 9. Tour de taille. */
-  T.push({p:60,emoji:'📏',title:'Le mètre ruban dit ce que la balance cache',body:
+  T.push({p:60,icon:'ruler',title:'Le mètre ruban dit ce que la balance cache',body:
     '<p>Le tour de taille descend souvent quand le poids stagne : la graisse part pendant que l’eau et le muscle compensent sur la balance. '
     +'C’est aussi un meilleur indicateur de santé que l’IMC, parce qu’il vise la graisse du ventre.</p>'
     +'<ul class="tip-ul"><li>Au niveau du nombril, debout, à jeun, sans serrer.</li>'
@@ -5352,25 +5887,25 @@ function screenAstuces(){
     +(metricOn('waist')?'<button class="btn btn--ghost btn--block" data-act="weigh-in" style="margin-top:10px">Noter mon tour de taille</button>'
       :'<button class="btn btn--ghost btn--block" data-act="metric-on" data-k="waist" style="margin-top:10px">Suivre mon tour de taille</button>')});
   /* 10. Pause de régime, proposée seulement quand elle a du sens. */
-  if(weeks>=10) T.push({p:78,emoji:'⏸️',title:'Et si tu faisais une pause ?',badge:weeks+' semaines',body:
+  if(weeks>=10) T.push({p:78,icon:'clock',title:'Et si tu faisais une pause ?',badge:weeks+' semaines',body:
     '<p>Après deux à trois mois de déficit continu, une <b>semaine à ton point neutre</b> — ni plus, ni moins — fait souvent plus de bien qu’un effort supplémentaire : la faim redescend, l’énergie revient, et la perte repart ensuite plus franchement.</p>'
     +'<p>Ce n’est pas un abandon, c’est une respiration prévue. Tu continues à te peser, tu continues à noter : tu changes seulement la hauteur de la barre pendant sept jours.</p>'
     +'<button class="btn btn--ghost btn--block" data-act="go" data-route="/simulateur" style="margin-top:10px">Voir mon point neutre</button>'});
   /* 11. Alcool, factuel. */
-  T.push({p:50,emoji:'🍷',title:'L’alcool, sans morale',body:
+  T.push({p:50,icon:'droplet',title:'L’alcool, sans morale',body:
     '<p>Un gramme d’alcool apporte 7 kcal — presque autant que le gras. Un verre de vin tourne autour de 120 kcal, une pinte autour de 200.</p>'
     +'<p>Mais l’essentiel est ailleurs : tant qu’il y a de l’alcool à traiter, le corps met le reste en attente. Et il désinhibe l’appétit — c’est souvent ce qui accompagne le verre qui compte le plus.</p>'
     +'<p class="tip-note">Aucune raison de s’en priver si tu y tiens. Le noter dans tes calories suffit à ce que l’app reste juste.</p>'});
   /* 12. L'effet week-end, personnalisé. */
   const wd=weekdayEffect();
-  if(wd.ok&&wd.notable) T.push({p:72,emoji:'📆',title:'Ton effet week-end',badge:capit(wd.hi.label),body:
+  if(wd.ok&&wd.notable) T.push({p:72,icon:'calendar',title:'Ton effet week-end',badge:capit(wd.hi.label),body:
     '<p>Ton poids du '+esc(wd.hi.label)+' est en moyenne <b>'+fmtKg(wd.gap)+'</b> au-dessus de ton '+esc(wd.lo.label)+'. '
     +'C’est le rythme de ta semaine, pas de la graisse qui apparaît et disparaît.</p>'
     +'<p>Le piège classique : comparer un lundi à un vendredi et croire qu’on a tout perdu ou tout repris. '
     +'Compare toujours un lundi à un lundi — ou fie-toi à la tendance lissée, qui fait ça pour toi.</p>'
     +'<button class="btn btn--ghost btn--block" data-act="go" data-route="/analyse" style="margin-top:10px">Voir ma semaine</button>'});
   /* 13. Le redémarrage. */
-  T.push({p:40,emoji:'🌱',title:'Reprendre après une coupure',body:
+  T.push({p:40,icon:'sprout',title:'Reprendre après une coupure',body:
     '<p>Une semaine sans se peser, un mois sans noter : ça arrive à tout le monde et ça n’efface rien. '
     +'Tes anciennes données sont toujours là, ta tendance se recalcule toute seule, ta série repart de zéro sans que ça change quoi que ce soit à ton corps.</p>'
     +'<p>La seule chose qui compte : la pesée de demain matin. Pas celles qui manquent.</p>'});
@@ -5410,7 +5945,7 @@ function analyseProteines(){
 function screenCalories(){
   if(!state.settings.modules.kcalIn){
     return backHead('Calories','/plus')
-      +'<div class="card"><div class="row-title">🍽️ Calories mangées</div>'
+      +'<div class="card"><div class="row-title flex aic gap8">'+ic('plate','ic--sm')+'Calories mangées</div>'
       +'<div class="small muted" style="margin:6px 0 12px">Note chaque jour ce que tu as mangé (le total de Yazio suffit). Élan cherche alors le décalage réel entre ton alimentation et ta balance, et calcule ta dépense réelle.</div>'
       +'<button class="btn btn--primary btn--block" data-act="mod-on" data-k="kcalIn">Activer les calories</button></div>';
   }
@@ -5441,7 +5976,7 @@ function screenCalories(){
     }
     h+='</div>';
   }
-  h+='<button class="btn btn--ghost btn--block" data-act="go" data-route="/courbes" style="margin-top:12px">📈 Voir le décalage sur la courbe</button>';
+  h+='<button class="btn btn--ghost btn--block" data-act="go" data-route="/courbes" style="margin-top:12px">'+ic('chart')+'Voir le décalage sur la courbe</button>';
   const days=[]; for(let i=13;i>=0;i--){ const d=addDayYMD(isoToday(),-i); days.push({d:d,v:mv(entryFor(d),'kcalIn')}); }
   const neutral=maintenanceKcal();
   h+='<div class="section-title">14 derniers jours</div><div class="list">'
@@ -5449,7 +5984,7 @@ function screenCalories(){
      const w=mv(entryFor(x.d),'weight');
      const ec=(x.v!=null&&neutral.kcal!=null)?x.v-neutral.kcal:null;
      return '<div class="row" data-act="wi-kcal" data-date="'+x.d+'">'
-     +'<div class="row-ic">'+(x.v==null?'—':'🍽️')+'</div>'
+     +'<div class="row-ic"'+(x.v==null?' style="color:var(--tx-3)"':' style="color:var(--m-cal)"')+'>'+ic('plate')+'</div>'
      +'<div class="row-main"><div class="row-title">'+esc(capit(fmtDayLabel(x.d)))+'</div>'
      +'<div class="row-sub">'+(x.v==null?'<span class="muted">non renseigné · toucher pour ajouter</span>'
         :('<b>'+nf(x.v,0)+' kcal</b>'+(ec!=null?' <span class="'+(ec<0?'down':'')+'">'+(ec<0?MINUS:'+')+nf(Math.abs(ec),0)+' vs neutre</span>':'')))
@@ -5465,7 +6000,7 @@ function openQuickMetric(k,date){
   date=validYMD(date)?date:isoToday();
   const M=METRICS[k]; if(!M) return;
   const e=entryFor(date), cur=e?mv(e,k):null;
-  openSheet(M.emoji+' '+M.label+' — '+capit(fmtDayLabel(date)),
+  openSheet(M.label+' — '+capit(fmtDayLabel(date)),
     '<div class="field"><label>'+esc(M.label)+(M.unit?' ('+esc(M.unit)+')':'')+'</label>'
     +'<input class="input tnum" id="qmVal" inputmode="decimal" autocomplete="off" value="'+(cur!=null?nf(cur,M.dec):'')+'" placeholder="—"></div>'
     +'<div class="chip-row">'+[[0,"Aujourd'hui"],[-1,'Hier'],[-2,'Avant-hier']].map(o=>{
@@ -5489,7 +6024,7 @@ function saveQuickMetric(k,date){
 /* ---------- Écran : Mes mesures ---------- */
 function screenMetrics(){
   let h=backHead('Mes mesures','/plus');
-  if(WI_RETOUR) h+='<div class="card card--accent"><div class="row-title">⚖️ Ta pesée t’attend</div>'
+  if(WI_RETOUR) h+='<div class="card card--accent"><div class="row-title flex aic gap8">'+ic('scale','ic--sm')+'Ta pesée t’attend</div>'
     +'<div class="small muted" style="margin:5px 0 10px">Ce que tu avais tapé est enregistré. Coche ce que tu veux saisir, puis reviens-y.</div>'
     +'<button class="btn btn--primary btn--block" data-act="wi-resume">Reprendre la pesée du '+esc(fmtDateShort(WI_RETOUR))+'</button></div>';
   h+='<div class="hint" style="margin-bottom:12px">Choisis ce que tu saisis chaque matin. Décoche ce que ta balance ne donne pas — tu pourras réactiver quand tu veux, sans rien perdre.</div>';
@@ -5500,9 +6035,9 @@ function screenMetrics(){
     h+='<div class="section-title">'+esc(g[0])+'</div><div class="card">';
     g[1].forEach(k=>{
       const M=METRICS[k];
-      if(M.always){ h+='<div class="toggle"><div class="grow"><div class="toggle-label">'+M.emoji+' '+esc(M.label)+'</div>'
+      if(M.always){ h+='<div class="toggle"><div class="grow"><div class="toggle-label">'+esc(M.label)+'</div>'
         +'<div class="toggle-sub">toujours actif</div></div><span class="badge badge--ok">requis</span></div>'; return; }
-      h+=toggleHTML(M.emoji+' '+esc(M.label),metricOn(k),'metric-toggle',' data-k="'+k+'"',
+      h+=toggleHTML(esc(M.label),metricOn(k),'metric-toggle',' data-k="'+k+'"',
         (M.kind==='comp')?'saisissable en % ou en kg':(M.unit?('en '+M.unit):''));
     });
     h+='</div>';
@@ -5518,17 +6053,17 @@ function screenMetrics(){
 /* ---------- Écran : Aide ---------- */
 function screenAide(){
   return backHead('Aide','/plus')
-   +'<div class="card"><div class="row-title">⚖️ Pourquoi le % et les kg ?</div>'
+   +'<div class="card"><div class="row-title flex aic gap8">'+ic('scale','ic--sm')+'Pourquoi le % et les kg ?</div>'
    +'<div class="small muted" style="margin-top:6px;line-height:1.55">Une balance à impédance donne des pourcentages. Mais un pourcentage est un rapport : si ton poids baisse, ton % de gras peut baisser sans que tu aies perdu un seul gramme de graisse. Élan convertit tout en kilos à partir du poids du jour — et affiche les deux, partout. Tu peux saisir l’un ou l’autre, l’autre se calcule.</div></div>'
-   +'<div class="card"><div class="row-title">📉 Pourquoi la ligne lissée ?</div>'
+   +'<div class="card"><div class="row-title flex aic gap8">'+ic('trend','ic--sm')+'Pourquoi la ligne lissée ?</div>'
    +'<div class="small muted" style="margin-top:6px;line-height:1.55">Ton poids varie de plus ou moins un kilo d’un jour à l’autre : eau, sel, sommeil, transit, séance de la veille. La ligne de tendance absorbe ce bruit. C’est elle qui dit si tu progresses, pas la pesée du jour.</div></div>'
-   +'<div class="card"><div class="row-title">🕳️ Et si je saute des jours ?</div>'
+   +'<div class="card"><div class="row-title flex aic gap8">'+ic('calendar','ic--sm')+'Et si je saute des jours ?</div>'
    +'<div class="small muted" style="margin-top:6px;line-height:1.55">Rien de cassé. Les trous sont visibles sur les courbes (trait pointillé), les moyennes ne comptent que les jours réellement mesurés, et ta série tolère un jour manqué. Tu peux aussi ne saisir que le poids : toutes les autres mesures sont facultatives.</div></div>'
-   +'<div class="card"><div class="row-title">💊 Les prises après la séance</div>'
+   +'<div class="card"><div class="row-title flex aic gap8">'+ic('pill','ic--sm')+'Les prises après la séance</div>'
    +'<div class="small muted" style="margin-top:6px;line-height:1.55">Un créneau ancré sur l’entraînement ne s’affiche que les jours où tu as une séance. Les autres jours, il descend dans « Sans objet aujourd’hui » — sans compter contre toi — et reste cochable si tu l’as pris quand même.</div></div>'
-   +'<div class="card"><div class="row-title">🔔 Les rappels</div>'
+   +'<div class="card"><div class="row-title flex aic gap8">'+ic('clock','ic--sm')+'Les rappels</div>'
    +'<div class="small muted" style="margin-top:6px;line-height:1.55">iPhone n’autorise pas une application web à envoyer des notifications programmées. Élan te rappelle tes prises et tes séances à chaque ouverture. Pour une vraie alarme, exporte tes créneaux vers ton Calendrier : l’alerte viendra alors d’iOS.</div></div>'
-   +'<div class="card"><div class="row-title">💾 Mes données</div>'
+   +'<div class="card"><div class="row-title flex aic gap8">'+ic('save','ic--sm')+'Mes données</div>'
    +'<div class="small muted" style="margin-top:6px;line-height:1.55">Elles sont sur cet iPhone, et nulle part ailleurs. Tant que tu ouvres Élan régulièrement, elles ne bougent pas. Mais un téléphone se perd, se réinitialise, se remplace : une copie hors du téléphone, c’est dix secondes par semaine.</div>'
    +'<button class="btn btn--ghost btn--block" data-act="go" data-route="/sauvegarde" style="margin-top:10px">Ouvrir la sauvegarde</button></div>'
    +'<div class="hint" style="margin-top:14px">Élan décrit tes chiffres. Ce n’est pas un outil médical : pour toute question de santé, parles-en à un professionnel.</div>';
@@ -5548,8 +6083,8 @@ function screenSettings(){
    +segHTML([['m','Homme'],['f','Femme']],p.sex,'st-sex','')+'</div>'
    +'<div class="field"><label>Tes journées <span class="muted">(hors sport)</span></label>'
    +'<div class="opt-list">'+JOBS.map(j=>'<button class="opt'+(currentJob().code===j.code?' is-active':'')+'" data-act="st-job" data-k="'+j.code+'">'
-     +'<span class="opt-ic">'+j.emoji+'</span><span class="opt-main"><b>'+esc(j.label)+'</b><span class="opt-sub">'+esc(j.hint)+'</span></span>'
-     +'<span class="opt-tick">✓</span></button>').join('')+'</div></div>'
+     +'<span class="opt-ic">'+ic(j.icon)+'</span><span class="opt-main"><b>'+esc(j.label)+'</b><span class="opt-sub">'+esc(j.hint)+'</span></span>'
+     +'<span class="opt-tick">'+ic('check','ic--sm')+'</span></button>').join('')+'</div></div>'
    +'<div class="hint">Huit heures debout brûlent plus que trois séances par semaine : c’est la base du calcul de ta dépense. Enregistré automatiquement.</div></div>';
 
   h+='<div class="section-title">Objectif</div><div class="card">'
@@ -5562,12 +6097,12 @@ function screenSettings(){
    +'<button class="chip chip--act" data-act="edit-start">Ajuster</button></div></div>';
 
   h+='<div class="section-title">Modules</div><div class="card">'
-   +toggleHTML('🏃 Sport',!!s.modules.sport,'mod-toggle',' data-k="sport"','séances, minutes, calendrier d’entraînement')
-   +toggleHTML('📅 Prévisions d’entraînement',!!s.modules.planning,'mod-toggle',' data-k="planning"','« aujourd’hui : badminton à 20h »')
-   +toggleHTML('🍽️ Calories mangées',!!s.modules.kcalIn,'mod-toggle',' data-k="kcalIn"','pour comprendre le lien avec ton poids')
-   +toggleHTML('💊 Pilulier',!!s.modules.pillbox,'mod-toggle',' data-k="pillbox"','médicaments, compléments, protéine')
+   +toggleHTML('Sport',!!s.modules.sport,'mod-toggle',' data-k="sport"','séances, minutes, calendrier d’entraînement')
+   +toggleHTML('Prévisions d’entraînement',!!s.modules.planning,'mod-toggle',' data-k="planning"','« aujourd’hui : badminton à 20h »')
+   +toggleHTML('Calories mangées',!!s.modules.kcalIn,'mod-toggle',' data-k="kcalIn"','pour comprendre le lien avec ton poids')
+   +toggleHTML('Pilulier',!!s.modules.pillbox,'mod-toggle',' data-k="pillbox"','médicaments, compléments, protéine')
    +'</div>';
-  h+='<button class="btn btn--ghost btn--block" data-act="go" data-route="/metriques" style="margin-top:10px">📐 Choisir mes mesures</button>';
+  h+='<button class="btn btn--ghost btn--block" data-act="go" data-route="/metriques" style="margin-top:10px">'+ic('layers')+'Choisir mes mesures</button>';
 
   if(s.modules.sport){
     h+='<div class="section-title">Sport</div><div class="card">'
@@ -5607,7 +6142,7 @@ function screenSettings(){
    +(s.modules.kcalIn?' Élan calcule aussi ton <b>point neutre observé</b>, bien plus fiable.'
                      :' Active les <b>calories mangées</b> pour qu’Élan calcule ton point neutre réel.')
    +'</div></div>'
-   +'<button class="btn btn--ghost btn--block" data-act="go" data-route="/simulateur" style="margin-top:10px">🧮 Simulateur de projection</button>'
+   +'<button class="btn btn--ghost btn--block" data-act="go" data-route="/simulateur" style="margin-top:10px">'+ic('calculator')+'Simulateur de projection</button>'
    +'</div>';
   h+='<div class="section-title">Affichage</div><div class="card">'
    +'<div class="field"><label>Couleur d’accent</label>'
@@ -5625,10 +6160,11 @@ function screenSettings(){
    +'<div class="chip-wrap">'+TAB_CHOICES.filter(c=>!c.fixed&&(!c.mod||s.modules[c.mod])).map(c=>{
       const on=tabList().indexOf(c.route)>=0;
       return '<button class="chip'+(on?' is-active':'')+'" data-act="st-tab" data-r="'+c.route+'">'
-        +(on?'✓ ':'+ ')+esc(c.label)+'</button>'; }).join('')+'</div>'
+        +ic(on?'check':'plus','ic--sm')+esc(c.label)+'</button>'; }).join('')+'</div>'
    +'<div class="hint" style="margin-top:10px">'+tabList().length+' onglets sur 6 possibles.</div></div>';
-  h+='<button class="btn btn--ghost btn--block" data-act="go" data-route="/sauvegarde" style="margin-top:12px">💾 Sauvegarde et synchronisation</button>';
-  h+='<button class="btn btn--ghost btn--block" data-act="go" data-route="/aide" style="margin-top:8px">❓ Aide</button>';
+  h+=sectionTitle('Application')+updateCard();
+  h+='<button class="btn btn--ghost btn--block" data-act="go" data-route="/sauvegarde" style="margin-top:12px">'+ic('save')+'Sauvegarde et synchronisation</button>';
+  h+='<button class="btn btn--ghost btn--block" data-act="go" data-route="/aide" style="margin-top:8px">'+ic('help')+'Aide</button>';
   h+='<div class="small muted center" style="margin-top:20px">Élan v'+esc(state.meta.appVersion)+' · '+storageUsedText()+' utilisés</div>';
   return h;
 }
@@ -5839,9 +6375,9 @@ function showImportPreview(res){
       'profil, objectif, modules, mesures affichées et préférences')
    +'<div class="hint">Décoché, tes réglages actuels sont conservés tels quels.</div></div>';
   h+='<div class="sheet-foot">'
-   +'<button class="btn btn--primary btn--block" data-act="bk-do-import" data-mode="merge">🔀 '+(localEmpty?'Restaurer mes données':'Fusionner — recommandé')+'</button>'
+   +'<button class="btn btn--primary btn--block" data-act="bk-do-import" data-mode="merge">'+ic('shuffle')+(localEmpty?'Restaurer mes données':'Fusionner — recommandé')+'</button>'
    +'<div class="hint" style="margin:6px 0 10px">Rien de ce que tu as ne sera perdu.</div>'
-   +(localEmpty?'':'<button class="btn btn--danger btn--block" data-act="bk-do-import" data-mode="replace">♻️ Tout remplacer</button>')
+   +(localEmpty?'':'<button class="btn btn--danger btn--block" data-act="bk-do-import" data-mode="replace">'+ic('refresh')+'Tout remplacer</button>')
    +'</div>';
   openSheet('Importer une sauvegarde',h);
 }
@@ -5993,10 +6529,10 @@ function divergenceSheet(remote,mode){
     +'<div class="kv"><span class="kv-k">Dans le cloud</span><span class="kv-v">'+remoteN+' pesées'
     +(remote.updatedAt?' · '+esc(agoText(remote.updatedAt)):'')+'</span></div></div>'
     +'<div class="sheet-foot">'
-    +'<button class="btn btn--primary btn--block" data-act="sync-resolve" data-how="merge">🔀 Fusionner les deux — recommandé</button>'
+    +'<button class="btn btn--primary btn--block" data-act="sync-resolve" data-how="merge">'+ic('shuffle')+'Fusionner les deux — recommandé</button>'
     +'<div class="hint" style="margin:6px 0 10px">Garde tout, complète les trous, aucun doublon.</div>'
-    +'<button class="btn btn--ghost btn--block" data-act="sync-resolve" data-how="local">📱 Garder cet iPhone</button>'
-    +'<button class="btn btn--ghost btn--block" data-act="sync-resolve" data-how="cloud" style="margin-top:8px">☁️ Prendre la version cloud</button>'
+    +'<button class="btn btn--ghost btn--block" data-act="sync-resolve" data-how="local">'+ic('phone')+'Garder cet iPhone</button>'
+    +'<button class="btn btn--ghost btn--block" data-act="sync-resolve" data-how="cloud" style="margin-top:8px">'+ic('cloud')+'Prendre la version cloud</button>'
     +'<button class="btn btn--ghost btn--block" data-act="close-sheet" style="margin-top:8px">Plus tard</button>'
     +'</div>');
 }
@@ -6064,15 +6600,15 @@ function linkGistHTML(){
 function phoneGuideHTML(){
   const steps=[
     ['<b>Sur l’ancien iPhone</b> — ouvre Élan → Sauvegarde.'],
-    ['Appuie sur <b>📤 Partager la sauvegarde</b>.'],
+    ['Appuie sur <b>Partager la sauvegarde</b>.'],
     ['Choisis <b>Enregistrer dans Fichiers</b> → iCloud Drive → dossier Élan. Vérifie que le fichier apparaît bien dans l’app Fichiers.'],
-    ['Si la synchro cloud est active : <b>🔄 Synchroniser maintenant</b>, et note l’identifiant du gist affiché.'],
+    ['Si la synchro cloud est active : <b>Synchroniser maintenant</b>, et note l’identifiant du gist affiché.'],
     ['<b>Sur le nouvel iPhone</b> — Safari → l’adresse d’Élan → Partager → <b>Sur l’écran d’accueil</b>.'],
-    ['Ouvre Élan depuis l’icône (pas depuis Safari) → Sauvegarde → <b>📁 Importer depuis un fichier</b> → Fichiers → iCloud Drive → Élan.'],
-    ['Vérifie l’aperçu (nombre de pesées, période), puis <b>🔀 Fusionner</b>.'],
+    ['Ouvre Élan depuis l’icône (pas depuis Safari) → Sauvegarde → <b>Importer depuis un fichier</b> → Fichiers → iCloud Drive → Élan.'],
+    ['Vérifie l’aperçu (nombre de pesées, période), puis <b>Fusionner</b>.'],
     ['Contrôle : sur l’accueil, le nombre de jours depuis le début et le poids de départ sont-ils les bons ? Dans le tableau, ta toute première pesée est-elle là ?']];
   return '<div class="steps">'+steps.map((s,i)=>'<div class="step"><div class="step-n">'+(i+1)+'</div><div class="step-txt">'+s[0]+'</div></div>').join('')+'</div>'
-   +'<div class="hint" style="margin-top:12px">⚠️ Ne supprime jamais Élan de l’ancien iPhone avant d’avoir vu tes chiffres sur le nouveau.</div>';
+   +'<div class="hint" style="margin-top:12px">Ne supprime jamais Élan de l’ancien iPhone avant d’avoir vu tes chiffres sur le nouveau.</div>';
 }
 function screenBackup(){
   const c=syncCfg(), n=state.entries.length;
@@ -6092,51 +6628,51 @@ function screenBackup(){
 
   h+='<div class="section-title">Mettre à l’abri</div><div class="card">'
    +'<div class="small muted" style="margin-bottom:10px">Un seul fichier contient tout. Range-le dans Fichiers → iCloud Drive : il survivra à ton téléphone.</div>'
-   +'<button class="btn btn--primary btn--block" data-act="bk-share">📤 Partager la sauvegarde</button>'
-   +'<div class="btn-row" style="margin-top:8px"><button class="btn btn--ghost" data-act="bk-download">⬇️ Télécharger</button>'
-   +'<button class="btn btn--ghost" data-act="bk-copy">📋 Copier</button></div></div>';
+   +'<button class="btn btn--primary btn--block" data-act="bk-share">'+ic('upload')+'Partager la sauvegarde</button>'
+   +'<div class="btn-row" style="margin-top:8px"><button class="btn btn--ghost" data-act="bk-download">'+ic('save')+'Télécharger</button>'
+   +'<button class="btn btn--ghost" data-act="bk-copy">'+ic('table')+'Copier</button></div></div>';
 
   h+='<div class="section-title">Sauvegarde automatique dans le cloud</div>';
   if(c.status==='invalid'){
-    h+='<div class="card card--danger"><div class="row-title">⚠️ Synchro en panne</div>'
+    h+='<div class="card card--danger"><div class="row-title flex aic gap8">'+ic('alert','ic--sm')+'Synchro en panne</div>'
      +'<div class="small muted" style="margin:6px 0 10px">'+esc(c.lastError?c.lastError.msg:'Jeton refusé.')+'</div>'
-     +'<button class="btn btn--primary btn--block" data-act="sync-setup">🔑 Coller un nouveau jeton</button>'
-     +'<button class="btn btn--ghost btn--block" data-act="sync-disable" style="margin-top:8px">⛔ Désactiver la synchro</button></div>';
+     +'<button class="btn btn--primary btn--block" data-act="sync-setup">'+ic('key')+'Coller un nouveau jeton</button>'
+     +'<button class="btn btn--ghost btn--block" data-act="sync-disable" style="margin-top:8px">'+ic('ban')+'Désactiver la synchro</button></div>';
   } else if(syncOn()){
     h+='<div class="card"><div class="small muted">Gist secret GitHub · <span class="code-box" style="display:inline-block;padding:2px 6px">'+esc(maskToken(c.token))+'</span></div>'
      +'<div class="kv"><span class="kv-k">Dernière synchro</span><span class="kv-v">'+esc(agoText(c.lastSyncAt))+'</span></div>'
      +toggleHTML('Synchro auto à l’ouverture',c.auto!==false,'sync-toggle-auto')
-     +'<button class="btn btn--ghost btn--block" data-act="sync-now" style="margin-top:8px">🔄 Synchroniser maintenant</button>'
-     +'<div class="btn-row" style="margin-top:8px"><button class="btn btn--ghost" data-act="sync-setup">🔑 Changer le jeton</button>'
-     +'<button class="btn btn--ghost" data-act="sync-disable">⛔ Désactiver</button></div>'
+     +'<button class="btn btn--ghost btn--block" data-act="sync-now" style="margin-top:8px">'+ic('refresh')+'Synchroniser maintenant</button>'
+     +'<div class="btn-row" style="margin-top:8px"><button class="btn btn--ghost" data-act="sync-setup">'+ic('key')+'Changer le jeton</button>'
+     +'<button class="btn btn--ghost" data-act="sync-disable">'+ic('ban')+'Désactiver</button></div>'
      +(c.gistId?'<div class="hint" style="margin-top:10px">gist : <span class="code-box" style="display:inline-block;padding:2px 6px">'+esc(c.gistId)+'</span><br>Ne partage jamais ce lien : un gist « secret » est introuvable sans son adresse, mais il n’est pas chiffré.</div>':'')
      +'</div>';
   } else {
-    h+='<div class="card"><div class="row-title">☁️ Sauvegarde automatique</div>'
+    h+='<div class="card"><div class="row-title flex aic gap8">'+ic('cloud','ic--sm')+'Sauvegarde automatique</div>'
      +'<div class="small muted" style="margin:6px 0 12px">Tes chiffres se copient tout seuls chez GitHub à chaque ouverture. Gratuit, aucun nouveau compte, cinq minutes à régler.</div>'
      +'<button class="btn btn--primary btn--block" data-act="sync-setup">Activer la sauvegarde cloud</button></div>';
   }
 
   h+='<div class="section-title">Récupérer</div><div class="card">'
    +'<input type="file" id="importFile" accept=".json,.txt,application/json,text/plain" style="display:none">'
-   +'<button class="btn btn--ghost btn--block" data-act="bk-import-file">📁 Importer depuis un fichier</button>'
-   +'<button class="btn btn--ghost btn--block" data-act="bk-import-paste" style="margin-top:8px">📝 Coller le texte d’une sauvegarde</button>'
-   +(syncOn()?'<button class="btn btn--ghost btn--block" data-act="sync-pull" style="margin-top:8px">☁️ Récupérer la copie cloud</button>':'')
+   +'<button class="btn btn--ghost btn--block" data-act="bk-import-file">'+ic('archive')+'Importer depuis un fichier</button>'
+   +'<button class="btn btn--ghost btn--block" data-act="bk-import-paste" style="margin-top:8px">'+ic('table')+'Coller le texte d’une sauvegarde</button>'
+   +(syncOn()?'<button class="btn btn--ghost btn--block" data-act="sync-pull" style="margin-top:8px">'+ic('cloud')+'Récupérer la copie cloud</button>':'')
    +'</div>';
 
   const rp=restorePoints();
   h+='<div class="section-title">Points de restauration sur cet iPhone</div>';
   if(!rp.length) h+='<div class="card"><div class="small muted">Aucun point de restauration pour l’instant.</div></div>';
   else h+='<div class="list">'+rp.map(r=>'<div class="row" data-act="bk-restore" data-key="'+r.key+'">'
-    +'<div class="row-ic">'+(r.key===K_PREV?'↩️':'🕘')+'</div>'
+    +'<div class="row-ic">'+ic(r.key===K_PREV?'history':'clock')+'</div>'
     +'<div class="row-main"><div class="row-title">'+esc(r.label)+'</div>'
     +'<div class="row-sub">'+esc(r.sub)+' · '+esc(fmtDateTime(r.at))+' · '+((r.counts&&r.counts.entries)||0)+' pesées</div></div>'+arrowHTML()+'</div>').join('')+'</div>';
 
-  h+='<div class="card" style="margin-top:14px"><div class="row-title">📱 Je change de téléphone</div>'
+  h+='<div class="card" style="margin-top:14px"><div class="row-title flex aic gap8">'+ic('phone','ic--sm')+'Je change de téléphone</div>'
    +'<div class="small muted" style="margin:6px 0 10px">Le guide en huit étapes pour ne rien perdre.</div>'
    +'<button class="btn btn--ghost btn--block" data-act="bk-phone-guide">Voir le guide</button></div>';
   h+='<div class="card"><div class="small muted">Où sont mes données ? Sur cet iPhone uniquement. Élan n’a pas de serveur, personne d’autre ne les voit. Espace utilisé : '+storageUsedText()+'.</div></div>';
-  h+='<button class="btn btn--danger btn--block" data-act="bk-wipe" style="margin-top:14px">🗑️ Tout effacer</button>';
+  h+='<button class="btn btn--danger btn--block" data-act="bk-wipe" style="margin-top:14px">'+ic('trash')+'Tout effacer</button>';
   return h;
 }
 
@@ -6145,7 +6681,7 @@ function screenBackup(){
 /* ---------- Composants réutilisables ---------- */
 function head(title,rightHTML){ return '<div class="screen-head"><h1 class="screen-title">'+esc(title)+'</h1>'+(rightHTML||'')+'</div>'; }
 function backHead(title,back,rightHTML){ return '<a class="back-btn" href="#'+back+'"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>Retour</a>'+head(title,rightHTML); }
-function empty(icon,title,text,btn){ return '<div class="empty"><div class="empty-ic">'+icon+'</div><h3>'+esc(title)+'</h3><p>'+esc(text)+'</p>'+(btn||'')+'</div>'; }
+function empty(icon,title,text,btn){ return '<div class="empty"><div class="empty-ic">'+ic(icon)+'</div><h3>'+esc(title)+'</h3><p>'+esc(text)+'</p>'+(btn||'')+'</div>'; }
 function sectionTitle(t,rightHTML){ return rightHTML
   ? '<div class="flex between aic" style="margin:22px 4px 10px"><div class="section-title" style="margin:0">'+esc(t)+'</div>'+rightHTML+'</div>'
   : '<div class="section-title">'+esc(t)+'</div>'; }
@@ -6196,7 +6732,7 @@ if(window.visualViewport){
 function openSheet(title,bodyHTML,opts){ opts=opts||{};
   SHEET_CLOSE=opts.onClose||null;
   sheetRoot.innerHTML='<div class="sheet-scrim" data-act="close-sheet"></div><div class="sheet"><div class="sheet-handle"></div>'
-    +'<div class="sheet-head"><div class="sheet-title">'+esc(title)+'</div><button class="sheet-close" data-act="close-sheet">✕</button></div>'
+    +'<div class="sheet-head"><div class="sheet-title">'+esc(title)+'</div><button class="sheet-close" data-act="close-sheet" aria-label="Fermer">'+ic('close','ic--sm')+'</button></div>'
     +'<div class="sheet-body">'+bodyHTML+'</div></div>';
   sheetRoot.classList.add('open'); sheetRoot.setAttribute('aria-hidden','false');
   wireSheetDrag();
@@ -6268,6 +6804,22 @@ function toast(msg,undoFn){ const root=document.getElementById('toast-root'); if
 const ACTIONS={
   'go':d=>nav(d.route),
   'close-sheet':()=>closeSheet(),
+  'app-update':()=>{ haptic(); checkForUpdate(); },
+  'wk-prev':()=>{ const f=firstEntry();
+    const p=addDayYMD(weekOfUI(),-7);
+    if(f&&p<weekStartYMD(f.date)) return;
+    state.ui.weekStart=p; haptic(); saveNow(); render(); },
+  'wk-next':()=>{ const n=addDayYMD(weekOfUI(),7);
+    if(n>weekStartYMD(isoToday())) return;
+    state.ui.weekStart=n; haptic(); saveNow(); render(); },
+  'wk-today':()=>{ state.ui.weekStart=null; haptic(); saveNow(); render(); },
+  /* Les mensurations se saisissent dans la feuille de pesée, curseur sur la bonne case :
+     un second formulaire pour les mêmes champs finirait par diverger de celui-ci. */
+  'meas-add':d=>{ const k=d.k&&metricOn(d.k)?d.k:(TAPE_KEYS.filter(metricOn)[0]||'waist');
+    openWeighIn(isoToday(),k); },
+  'app-hard-refresh':()=>confirmSheet('Tout recharger ?',
+    'Élan va vider son cache et se retélécharger. Tes pesées, tes séances, tes réglages et ta synchro ne sont pas concernés : ils vivent ailleurs et resteront intacts.',
+    'Tout recharger',()=>hardRefresh()),
   'go-metrics':()=>{ const d=WI&&WI.date; closeSheet(); WI_RETOUR=d||null; nav('/metriques'); },
   'wi-resume':()=>{ const d=WI_RETOUR; WI_RETOUR=null; openWeighIn(d||isoToday()); },
 
@@ -6281,7 +6833,7 @@ const ACTIONS={
   'wi-save':()=>saveWeighIn(),
   'wi-delete':()=>deleteWeighIn(),
   'skip-today':()=>{ state.ui.skippedDays=state.ui.skippedDays||{}; state.ui.skippedDays[isoToday()]=1; update();
-    toast('Journée sans pesée — à demain 👋',()=>{ delete state.ui.skippedDays[isoToday()]; update(); }); },
+    toast('Journée sans pesée — à demain.',()=>{ delete state.ui.skippedDays[isoToday()]; update(); }); },
   'unskip-today':()=>{ delete (state.ui.skippedDays||{})[isoToday()]; update(); openWeighIn(isoToday()); },
   'toggle-hero':()=>{ state.settings.heroMode=(state.settings.heroMode==='trend')?'raw':'trend'; touch(); saveNow(); render(); },
 
@@ -6293,7 +6845,7 @@ const ACTIONS={
   'goal-save':()=>saveGoal(),
   'goal-clear':()=>{ state.settings.goal.weightKg=null; state.settings.goal.date=null; closeSheet(); update(); toast('Objectif retiré'); },
   'set-maintain':()=>{ const t=trendNow(); if(t==null) return;
-    state.settings.goal.weightKg=Math.round(t*10)/10; state.settings.goal.mode='maintain'; update(); toast('Mode maintien activé 🛡️'); },
+    state.settings.goal.weightKg=Math.round(t*10)/10; state.settings.goal.mode='maintain'; update(); toast('Mode maintien activé'); },
   'edit-start':()=>startEditor(),
   'start-save':()=>{ const d=(document.getElementById('soDate')||{}).value, k=parseNum((document.getElementById('soKg')||{}).value);
     if(!validYMD(d)||k==null){ toast('Date et poids requis'); return; }
@@ -6304,12 +6856,12 @@ const ACTIONS={
   'mv-emoji':(d,el)=>markActive(el),
   'save-motivation':d=>{
     const t=String((document.getElementById('mvText')||{}).value||'').trim();
-    if(!t){ toast('Écris quelque chose 🙂'); return; }
+    if(!t){ toast('Écris quelque chose'); return; }
     const chip=q('#sheet-root .chip.is-active[data-emoji]');
     const em=chip?chip.dataset.emoji:'💭';
     if(d.id){ const m=state.motivations.find(x=>x.id===d.id); if(m){ m.text=t; m.emoji=em; } }
     else state.motivations.push({id:uid(),text:t,emoji:em,active:true,createdAt:new Date().toISOString()});
-    closeSheet(); update(); toast('C’est noté 💭'); },
+    closeSheet(); update(); toast('C’est noté'); },
   'del-motivation':d=>{ const i=state.motivations.findIndex(x=>x.id===d.id); if(i<0) return;
     const m=state.motivations[i]; state.motivations.splice(i,1); closeSheet(); update();
     toast('Supprimé',()=>{ state.motivations.splice(i,0,m); update(); }); },
@@ -6552,7 +7104,7 @@ const ACTIONS={
     state.settings.onboardingDone=true;
     invalidateCache(); saveNow(); render();
     if(state.settings.celebrateOn!==false) confetti();
-    toast('Bienvenue ! Première pesée enregistrée 🌱'); }
+    toast('Bienvenue ! Première pesée enregistrée'); }
 };
 function setModule(k,on){
   const avaitPlanning=!!state.settings.modules.planning;
@@ -6669,13 +7221,13 @@ function bootNudge(){
   if(state.ui.lastNudgeDate===isoToday()) return;
   let msg=null;
   const late=pillLateToday();
-  if(late.length===1) msg='⏰ '+late[0].product.name+' — prévu '+late[0].timeLabel;
-  else if(late.length>1) msg='⏰ '+late.length+' prises en retard aujourd’hui';
+  if(late.length===1) msg=late[0].product.name+' — prévu '+late[0].timeLabel;
+  else if(late.length>1) msg=late.length+' prises en retard aujourd’hui';
   if(!msg&&state.settings.modules.planning&&state.settings.planning.remindOnBoot){
     const p=plannedToday().filter(o=>o.status==='undecided');
-    if(p.length) msg='📅 Aujourd’hui : '+p[0].label+(p[0].time?' à '+p[0].time:'');
+    if(p.length) msg='Aujourd’hui : '+p[0].label+(p[0].time?' à '+p[0].time:'');
   }
-  if(!msg&&!hasWeightToday()&&weighIns().length>=3) msg='⚖️ Pas encore pesé aujourd’hui';
+  if(!msg&&!hasWeightToday()&&weighIns().length>=3) msg='Pas encore pesé aujourd’hui';
   if(!msg) return;
   state.ui.lastNudgeDate=isoToday(); saveNow();
   toast(msg);
@@ -6683,6 +7235,7 @@ function bootNudge(){
 function onAppForeground(){
   invalidateCache();
   autoBackupTick();
+  swAutoCheck();          // une PWA iOS n'est jamais « relancée » : c'est ICI qu'on regarde
   render();
 }
 function autoBackupTick(){
@@ -6691,6 +7244,137 @@ function autoBackupTick(){
   if(syncOn()) syncNow(false);
 }
 /* @@SECTION:ACTIONS@@ */
+
+/* ============================================================
+   MISE À JOUR DE L'APPLICATION
+   ------------------------------------------------------------
+   Une PWA installée sur l'écran d'accueil ne se recharge pas
+   toute seule : iOS ne la « redémarre » jamais vraiment, il la
+   réveille. Il faut donc trois choses, et les trois sont là :
+
+   1. un service worker qui sert la coquille en RÉSEAU D'ABORD
+      (cf. sw.js) — sinon on sert éternellement la veille ;
+   2. une détection automatique, qui fait apparaître un bandeau
+      dès qu'une version est prête ;
+   3. un bouton MANUEL dans les réglages, parce que la détection
+      automatique dépend du réseau et qu'il faut toujours laisser
+      une porte de sortie à quelqu'un qui doute.
+
+   Le bouton « Tout recharger » est le dernier recours : il vide
+   les caches et déconnecte le worker. Il ne touche JAMAIS
+   localStorage — les pesées ne sont pas dans le cache.
+   ============================================================ */
+let SW_REG=null, SW_WAITING=null, SW_RELOADING=false, SW_CHECKING=false, SW_LAST_CHECK=0;
+
+function swSupported(){ return 'serviceWorker' in navigator; }
+function updateReady(){ return !!SW_WAITING; }
+
+/* Un worker « installé » alors qu'un autre contrôle déjà la page = version en attente. */
+function swTrack(reg){
+  if(!reg||!reg.addEventListener) return;
+  SW_REG=reg;
+  if(reg.waiting&&navigator.serviceWorker.controller) swReady(reg.waiting);
+  reg.addEventListener('updatefound',()=>{
+    const nw=reg.installing;
+    if(!nw) return;
+    nw.addEventListener('statechange',()=>{
+      if(nw.state==='installed'&&navigator.serviceWorker.controller) swReady(nw);
+    });
+  });
+}
+function swReady(worker){
+  if(SW_WAITING===worker) return;
+  SW_WAITING=worker;
+  render();                                    // fait apparaître le bandeau
+}
+function registerSW(){
+  if(!swSupported()) return;
+  /* Tout est enveloppé : un navigateur qui refuse les workers (navigation privée,
+     vieux WebView) ne doit pas empêcher l'app de démarrer. */
+  try{
+    /* updateViaCache:'none' — le script du worker ne doit jamais venir du cache HTTP,
+       sinon on peut rester bloqué jusqu'à 24 h sur l'ancienne version. */
+    navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).then(swTrack).catch(()=>{});
+    if(navigator.serviceWorker.addEventListener) navigator.serviceWorker.addEventListener('controllerchange',()=>{
+      if(SW_RELOADING) return;
+      SW_RELOADING=true;
+      location.reload();
+    });
+  }catch(e){}
+}
+/* Vérification silencieuse : au lancement, et à chaque retour au premier plan. */
+function swAutoCheck(){
+  if(!SW_REG||updateReady()) return;
+  if(Date.now()-SW_LAST_CHECK<60000) return;   // pas plus d'une fois par minute
+  SW_LAST_CHECK=Date.now();
+  try{ SW_REG.update(); }catch(e){}
+}
+/* Vérification demandée par l'utilisateur : elle DOIT toujours répondre quelque chose. */
+async function checkForUpdate(){
+  if(!swSupported()){ toast('Mise à jour indisponible sur ce navigateur'); return; }
+  if(SW_CHECKING) return;
+  if(updateReady()){ applyUpdate(); return; }
+  SW_CHECKING=true; render();
+  try{
+    const reg=SW_REG||await navigator.serviceWorker.getRegistration();
+    if(!reg){ registerSW(); toast('Mise à jour en cours d’installation…'); return; }
+    swTrack(reg);
+    SW_LAST_CHECK=Date.now();
+    await reg.update();
+    /* `update()` rend la main dès que le script est comparé ; l'installation, elle,
+       prend encore un instant. On laisse deux secondes avant de conclure. */
+    await new Promise(r=>setTimeout(r,2000));
+    if(updateReady()) applyUpdate();
+    else toast('Tu es déjà à la dernière version ('+esc(state.meta.appVersion)+')');
+  }catch(e){
+    toast('Impossible de vérifier — vérifie ta connexion');
+  }finally{ SW_CHECKING=false; render(); }
+}
+/* On bascule sur le worker en attente ; son activation déclenche `controllerchange`,
+   donc le rechargement. Si rien ne vient en 4 s, on recharge nous-même. */
+function applyUpdate(){
+  if(!SW_WAITING){ location.reload(); return; }
+  toast('Mise à jour en cours…');
+  try{ SW_WAITING.postMessage({type:'SKIP_WAITING'}); }catch(e){}
+  setTimeout(()=>{ if(!SW_RELOADING){ SW_RELOADING=true; location.reload(); } },4000);
+}
+/* Le dernier recours. Vide les caches, débranche le worker, recharge.
+   Aucune donnée n'est touchée : les pesées vivent dans localStorage. */
+async function hardRefresh(){
+  toast('Rechargement complet…');
+  try{ if(window.caches){ const ks=await caches.keys(); await Promise.all(ks.map(k=>caches.delete(k))); } }catch(e){}
+  try{
+    if(swSupported()){
+      const regs=await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r=>r.unregister()));
+    }
+  }catch(e){}
+  SW_RELOADING=true;
+  /* Le paramètre casse le cache HTTP du document lui-même sur iOS. */
+  setTimeout(()=>{ location.replace(location.pathname+'?maj='+Date.now()+location.hash); },350);
+}
+/* Le bandeau : discret, en haut, et il ne revient pas s'excuser. */
+function updateBanner(){
+  if(!updateReady()) return '';
+  return '<div class="card card--accent upd-banner">'
+   +'<div class="today-top"><div class="today-ic is-acc">'+ic('refresh')+'</div>'
+   +'<div class="row-main"><div class="row-title">Une nouvelle version est prête</div>'
+   +'<div class="small muted">Elle s’installe en deux secondes, sans rien perdre.</div></div></div>'
+   +'<button class="btn btn--primary btn--block" data-act="app-update" style="margin-top:12px">Mettre à jour maintenant</button></div>';
+}
+/* La carte des réglages : version, vérification, et la porte de sortie. */
+function updateCard(){
+  const inst=(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;
+  return '<div class="card"><div class="row-title flex aic gap8">'+ic('refresh','ic--sm')+'Version et mise à jour</div>'
+   +'<div class="kv" style="margin-top:8px"><span class="kv-k">Version installée</span><span class="kv-v">Élan '+esc(state.meta.appVersion)+'</span></div>'
+   +'<div class="kv"><span class="kv-k">Mode</span><span class="kv-v">'+(inst?'écran d’accueil':'navigateur')+'</span></div>'
+   +(updateReady()?'<div class="hint" style="margin-top:8px;color:var(--acc-2)">Une nouvelle version est prête à être installée.</div>':'')
+   +'<button class="btn '+(updateReady()?'btn--primary':'btn--ghost')+' btn--block" data-act="app-update" style="margin-top:12px">'
+   +ic('refresh')+(SW_CHECKING?'Vérification…':(updateReady()?'Installer la mise à jour':'Rechercher une mise à jour'))+'</button>'
+   +'<button class="btn btn--ghost btn--block" data-act="app-hard-refresh" style="margin-top:8px">'+ic('trash')+'Tout recharger depuis zéro</button>'
+   +'<div class="hint" style="margin-top:10px">« Tout recharger » vide le cache de l’application et la retélécharge. '
+   +'Tes pesées, tes séances et tes réglages ne sont pas dans ce cache : rien ne peut être perdu.</div></div>';
+}
 
 /* ============================================================
    INIT
@@ -6730,6 +7414,8 @@ const TAB_ICONS={
   '/pilulier':'<rect x="3.2" y="8.4" width="17.6" height="7.2" rx="3.6"/><path d="M12 8.4v7.2"/>',
   '/calories':'<path d="M12 3.5c3 3.4 5 6 5 9a5 5 0 0 1-10 0c0-1.6.6-3 1.6-4.4.5 1.2 1.2 1.9 2 2 .3-2.4-.1-4.6 1.4-6.6Z"/>',
   '/analyse':'<circle cx="10.5" cy="10.5" r="6.2"/><path d="m15.2 15.2 4 4"/><path d="M8.4 11.6 10 9.6l1.7 1.6 2-2.6"/>',
+  '/semaine':'<rect x="3.4" y="5" width="17.2" height="15.4" rx="3"/><path d="M3.4 9.8h17.2M8.4 3.2v3.6M15.6 3.2v3.6"/>',
+  '/mensurations':'<path d="M3.3 14.5 14.5 3.3a1.6 1.6 0 0 1 2.3 0l3.9 3.9a1.6 1.6 0 0 1 0 2.3L9.5 20.7a1.6 1.6 0 0 1-2.3 0l-3.9-3.9a1.6 1.6 0 0 1 0-2.3Z"/><path d="m7.6 10.2 1.8 1.8M10.6 7.2l1.8 1.8M13.6 4.2l1.8 1.8M4.6 13.2l1.8 1.8"/>',
   '/simulateur':'<rect x="4.5" y="3" width="15" height="18" rx="3"/><path d="M8 7.5h8M8.5 12h1M12 12h1M15.5 12h1M8.5 16h1M12 16h1M15.5 16h1"/>',
   '/objectif':'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.4"/><path d="M12 4v2.2M12 17.8V20M4 12h2.2M17.8 12H20"/>',
   '/paliers':'<path d="M7 4h10v4a5 5 0 0 1-10 0Z"/><path d="M7 5.5H4.5v1A3.5 3.5 0 0 0 8 10M17 5.5h2.5v1A3.5 3.5 0 0 1 16 10"/><path d="M12 13v3M9 20h6l-.7-4h-4.6Z"/>',
@@ -6743,6 +7429,8 @@ const TAB_CHOICES=[
   {route:'/pilulier',label:'Pilulier',mod:'pillbox'},
   {route:'/calories',label:'Calories',mod:'kcalIn'},
   {route:'/analyse',label:'Analyse'},
+  {route:'/semaine',label:'Semaine'},
+  {route:'/mensurations',label:'Mensurations'},
   {route:'/simulateur',label:'Simulateur'},
   {route:'/objectif',label:'Objectif'},
   {route:'/paliers',label:'Paliers'},
@@ -6820,7 +7508,7 @@ function boot(){
   if(!location.hash){ const fs=state.settings.firstScreen; location.hash='#'+(['/','/courbes','/tableau','/plus'].indexOf(fs)>=0?fs:'/'); }
   render();
   onAppOpen();
-  if('serviceWorker' in navigator){ navigator.serviceWorker.register('./sw.js').catch(()=>{}); }
+  registerSW();
   /* iOS n'autorise aucune notification programmée depuis une PWA : le seul rappel possible
      est celui de l'ouverture. On n'en montre donc qu'UN SEUL, le plus actionnable, et
      jamais sur l'accueil — où les cartes disent déjà tout, et de façon permanente. */
